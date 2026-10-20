@@ -41,6 +41,39 @@ Needs a C compiler on `PATH` (clang or gcc). Note that on macOS `gcc` is a
 clang shim — harmless here, but it means `-fdiagnostics-format=json` is
 unavailable, which is why diagnostics are scraped from text.
 
+## Asking in plain English
+
+```bash
+./.venv/bin/python -m nlpcc ask "why does this not compile" -f program.c
+./.venv/bin/python -m nlpcc ask "make it faster and use less memory" -f program.c
+./.venv/bin/python -m nlpcc ask "write me a program that reverses a string"
+```
+
+The request is routed by keyword rules in `nlpcc/nlp/intent.py` — no model,
+no API key, instant, and it reports why it decided what it decided. It picks
+the stage of the pipeline to run and, for "make it faster", pulls the
+objectives out of the sentence.
+
+## Running without an API key
+
+```bash
+./.venv/bin/python -m nlpcc models        # says which model it found
+```
+
+The model-backed parts — explaining unmatched diagnostics, AI code analysis,
+and code generation — use whatever is available, **local first**:
+
+1. **LM Studio** — load a model and run `lms server start`. No API key.
+2. **Ollama** — just run it. No API key.
+3. **Anthropic** — used only if credentials happen to exist.
+
+Everything else works with no model at all. The compiler, the explanations,
+the five dimensions, the score and the suggestions are all deterministic.
+
+A small local model is noticeably rougher than a hosted one, and slower. That
+is a real trade, so the provider that produced a given answer is reported
+alongside it rather than left to guess.
+
 ## The web interface
 
 Two processes: the Python API, and the React dev server that proxies to it.
@@ -51,7 +84,7 @@ cd frontend && npm install && npm run dev    # terminal 2 -- UI on :5173
 ```
 
 Open http://localhost:5173. Paste C code, pick what to optimize for, and
-press Analyze. The options are fetched from `/api/options`, so the UI can
+press Analyze — or type what you want in plain English and press Ask. The options are fetched from `/api/options`, so the UI can
 only ever offer objectives the analyzer actually supports.
 
 The server binds to localhost and nothing else: "Run the program" compiles and

@@ -17,9 +17,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import models
 from .diagnostics import Diagnostic
 
-MODEL = "claude-opus-5-5"
 MAX_ATTEMPTS = 2
 
 SYSTEM_PROMPT = """You write small, correct C programs.
@@ -54,6 +54,7 @@ class GenerationResult:
     attempts: list[Attempt] = field(default_factory=list)
     notes: str = ""
     failure_reason: str = ""
+    provider: str = ""
 
     @property
     def diagnostics(self) -> list[Diagnostic]:
@@ -66,6 +67,7 @@ class GenerationResult:
             "attempts": len(self.attempts),
             "code": self.code,
             "notes": self.notes,
+            "provider": self.provider,
             "failure_reason": self.failure_reason,
             "diagnostics": [d.to_dict() for d in self.diagnostics],
         }
@@ -80,18 +82,7 @@ def _strip_fence(text: str) -> str:
     return match.group(1) if match else text.strip()
 
 
-def _client():
-    try:
-        import anthropic
-    except ImportError:
-        return None, "the 'anthropic' package is not installed (pip install anthropic)"
-    try:
-        return anthropic.Anthropic(), ""
-    except Exception as exc:                     # noqa: BLE001
-        return None, f"no API credentials available ({exc.__class__.__name__})"
-
-
-def _request(client, description: str, previous: Attempt | None) -> tuple[str, str]:
+def _request(provider, description: str, previous: Attempt | None) -> tuple[str, str]:
     """One generation call. Returns (code, notes)."""
     from pydantic import BaseModel
 
@@ -115,16 +106,8 @@ def _request(client, description: str, previous: Attempt | None) -> tuple[str, s
             "Fix the program. Return the complete corrected program."
         )
 
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=8192,
-        system=SYSTEM_PROMPT,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "medium"},
-        messages=[{"role": "user", "content": prompt}],
-        output_format=Program,
-    )
-    parsed = getattr(response, "parsed_output", None)
+    parsed = models.complete(SYSTEM_PROMPT, prompt, Program, provider=provider,
+                             max_tokens=8192)
     if parsed is None:
         return "", ""
     return _strip_fence(parsed.code), parsed.notes.strip()
@@ -139,10 +122,11 @@ def generate(description: str, workdir: Path | None = None,
 
     result = GenerationResult(description=description)
 
-    client, reason = _client()
-    if client is None:
-        result.failure_reason = reason
+    provider = models.available()
+    if provider is None:
+        result.failure_reason = models.describe()
         return result
+    result.provider = str(provider)
 
     previous: Attempt | None = None
     with tempfile.TemporaryDirectory(prefix="nlpcc-gen-") as tmp:
@@ -152,7 +136,7 @@ def generate(description: str, workdir: Path | None = None,
 
         for _ in range(max_attempts):
             try:
-                code, notes = _request(client, description, previous)
+                code, notes = _request(provider, description, previous)
             except Exception as exc:             # noqa: BLE001
                 result.failure_reason = f"the model call failed ({exc.__class__.__name__})"
                 return result

@@ -10,10 +10,11 @@ ordering is the whole design:
     rather than authored.
   * Every answer is cached on disk by diagnostic code, so the second run of
     the same program costs nothing and works with the network unplugged.
-  * Nothing here can fail the pipeline. No API key, no package installed, no
-    network, a rate limit, a malformed reply -- each leaves the diagnostic
-    exactly as it arrived, and the CLI goes on reporting it without an
-    explanation.
+  * It runs on whatever model is available, local first -- LM Studio or
+    Ollama need no API key (see nlpcc/models.py).
+  * Nothing here can fail the pipeline. No model, no network, a rate limit, a
+    malformed reply -- each leaves the diagnostic exactly as it arrived, and
+    the CLI goes on reporting it without an explanation.
 
 Each answer the model gives is a candidate for promotion: an explanation that
 turns out to be right belongs in rules.py as a permanent rule, which is how
@@ -30,9 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .. import models
 from ..diagnostics import Diagnostic
 
-MODEL = "claude-opus-5-5"
 CACHE_DIR = Path(".nlpcc-cache") / "explanations"
 
 SYSTEM_PROMPT = """You explain C compiler diagnostics to someone in their first \
@@ -66,6 +67,7 @@ class Outcome:
     from_cache: int = 0
     attempted: int = 0
     unavailable_reason: str = ""
+    provider: str = ""
 
     @property
     def available(self) -> bool:
@@ -97,24 +99,7 @@ def _write_cache(key: str, explanation: ModelExplanation, cache_dir: Path) -> No
         pass            # a cache that cannot be written is not an error
 
 
-def _client():
-    """The Anthropic client, or a reason we have none.
-
-    Credentials resolve from ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or an
-    `ant auth login` profile, so an unset API key does not by itself mean
-    there are no credentials -- we let the SDK decide and report what it says.
-    """
-    try:
-        import anthropic
-    except ImportError:
-        return None, "the 'anthropic' package is not installed (pip install anthropic)"
-    try:
-        return anthropic.Anthropic(), ""
-    except Exception as exc:                    # noqa: BLE001 - any construction failure
-        return None, f"no API credentials available ({exc.__class__.__name__})"
-
-
-def _ask(client, diag: Diagnostic, source_line: str) -> ModelExplanation | None:
+def _ask(provider, diag: Diagnostic, source_line: str) -> ModelExplanation | None:
     from pydantic import BaseModel
 
     class Schema(BaseModel):
@@ -138,19 +123,8 @@ def _ask(client, diag: Diagnostic, source_line: str) -> ModelExplanation | None:
             prompt += f"  line {item['line']}: {item['message']}\n"
     prompt += ("\nWrite a title of four or five words, the explanation, and the fix.")
 
-    try:
-        response = client.messages.parse(
-            model=MODEL,
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            output_config={"effort": "low"},     # a short, bounded explanation task
-            messages=[{"role": "user", "content": prompt}],
-            output_format=Schema,
-        )
-    except Exception:                            # noqa: BLE001 - never fail the pipeline
-        return None
-
-    parsed = getattr(response, "parsed_output", None)
+    parsed = models.complete(SYSTEM_PROMPT, prompt, Schema, provider=provider,
+                             max_tokens=2048)
     if parsed is None:
         return None
     return ModelExplanation(parsed.title.strip(), parsed.explanation.strip(),
@@ -194,16 +168,17 @@ def explain_unmatched(diagnostics: Iterable[Diagnostic], source: Path | None = N
         outcome.unavailable_reason = "offline mode (NLPCC_OFFLINE is set)"
         return outcome
 
-    client, reason = _client()
-    if client is None:
-        outcome.unavailable_reason = reason
+    provider = models.available()
+    if provider is None:
+        outcome.unavailable_reason = models.describe()
         return outcome
+    outcome.provider = str(provider)
 
     for diag in still_pending:
         line = ""
         if diag.position and 0 < diag.position.line <= len(lines):
             line = lines[diag.position.line - 1]
-        answer = _ask(client, diag, line)
+        answer = _ask(provider, diag, line)
         if answer is None:
             continue
         _apply(diag, answer, source="llm")

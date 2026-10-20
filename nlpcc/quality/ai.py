@@ -5,19 +5,20 @@ rule engine uses. It runs alongside the rules, not instead of them: the rules
 catch what they know and always work offline, and this catches what no fixed
 threshold can describe.
 
-Optional, like every other model-backed part of this project. No package, no
-credentials, no network or a bad reply leaves the analysis exactly as the
-rules produced it.
+Runs on whatever model is available -- a local one through LM Studio or
+Ollama needs no API key at all (see nlpcc/models.py). Optional either way: no
+model, or a reply that does not parse, leaves the analysis exactly as the
+rules produced it. Each finding records which provider wrote it.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from .. import models
 from ..diagnostics import Diagnostic, Origin, Phase, Position, Severity
 from .rules import MAINTAINABILITY, PERFORMANCE, PRACTICES, READABILITY, SECURITY
 
-MODEL = "claude-opus-5-5"
 DIMENSIONS = (SECURITY, READABILITY, MAINTAINABILITY, PERFORMANCE, PRACTICES)
 MAX_FINDINGS = 8
 
@@ -34,27 +35,13 @@ penalty from 5 to 40 for how much it should cost that dimension's score.
 Report at most {MAX_FINDINGS} findings. If the code is fine, report none."""
 
 
-def _client():
-    try:
-        import anthropic
-    except ImportError:
-        return None, "the 'anthropic' package is not installed"
-    try:
-        return anthropic.Anthropic(), ""
-    except Exception as exc:                     # noqa: BLE001
-        return None, f"no API credentials available ({exc.__class__.__name__})"
-
-
 def analyze(source: Path) -> list[Diagnostic]:
     """AI findings for one file. Empty when the model is unavailable."""
-    client, _reason = _client()
-    if client is None:
+    provider = models.available()
+    if provider is None:
         return []
 
-    try:
-        from pydantic import BaseModel
-    except ImportError:
-        return []
+    from pydantic import BaseModel
 
     class Finding(BaseModel):
         dimension: str
@@ -74,20 +61,8 @@ def analyze(source: Path) -> list[Diagnostic]:
 
     numbered = "\n".join(f"{i:4d}  {line}"
                          for i, line in enumerate(code.splitlines(), 1))
-    try:
-        response = client.messages.parse(
-            model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            output_config={"effort": "medium"},
-            messages=[{"role": "user",
-                       "content": f"Review this C program:\n\n{numbered}"}],
-            output_format=Review,
-        )
-    except Exception:                            # noqa: BLE001 - never fail the pipeline
-        return []
-
-    parsed = getattr(response, "parsed_output", None)
+    parsed = models.complete(SYSTEM_PROMPT, f"Review this C program:\n\n{numbered}",
+                             Review, provider=provider)
     if parsed is None:
         return []
 
@@ -111,6 +86,8 @@ def analyze(source: Path) -> list[Diagnostic]:
             meta={"title": finding.title.strip(),
                   "explained_by": "ai",
                   "generated": True,
+                  "provider": provider.kind,
+                  "model": provider.model,
                   "dimension": finding.dimension,
                   "penalty": max(5, min(40, finding.penalty))},
         ))

@@ -12,6 +12,9 @@ export default function App() {
   const [report, setReport] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [request, setRequest] = useState("");
+  const [intent, setIntent] = useState(null);
+  const [generated, setGenerated] = useState(null);
 
   // The controls are built from what the server says it supports, so the UI
   // cannot offer an objective the analyzer does not know about.
@@ -33,9 +36,49 @@ export default function App() {
     );
   }
 
+  function reset() {
+    setError("");
+    setIntent(null);
+    setGenerated(null);
+  }
+
+  // Plain English in, the right stage of the pipeline out. The intent is
+  // worked out by keyword rules on the server, so this needs no model.
+  async function ask() {
+    setBusy(true);
+    reset();
+    try {
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: request, code, ai }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "That did not work.");
+        return;
+      }
+      setIntent(data.intent);
+      if (data.generated) {
+        setGenerated(data.generated);
+        setReport(null);
+        if (data.generated.accepted) setCode(data.generated.code);
+      } else if (data.report) {
+        setReport(data.report);
+      } else if (data.error) {
+        setError(data.error);
+      }
+    } catch {
+      setError("Cannot reach the analyzer. Is `nlpcc serve` running?");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function analyze() {
     setBusy(true);
-    setError("");
+    reset();
+    setGenerated(null);
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -57,6 +100,13 @@ export default function App() {
     }
   }
 
+  function onAskKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (request.trim() && !busy) ask();
+    }
+  }
+
   return (
     <div className="page">
       <header>
@@ -66,6 +116,40 @@ export default function App() {
 
       <div className="columns">
         <section className="panel">
+          <h2>Ask in plain English</h2>
+          <div className="askrow">
+            <input
+              type="text"
+              value={request}
+              placeholder="why does this not compile?"
+              onChange={(e) => setRequest(e.target.value)}
+              onKeyDown={onAskKey}
+            />
+            <button
+              className="secondary"
+              onClick={ask}
+              disabled={busy || !request.trim()}
+            >
+              Ask
+            </button>
+          </div>
+          <div className="examples">
+            {[
+              "why does this not compile?",
+              "make it faster",
+              "how good is my code?",
+              "write a program that reverses a string",
+            ].map((example) => (
+              <button
+                key={example}
+                className="example"
+                onClick={() => setRequest(example)}
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+
           <h2>Your code</h2>
           <textarea
             value={code}
@@ -103,7 +187,12 @@ export default function App() {
           <label className="toggle">
             <input type="checkbox" checked={ai} onChange={(e) => setAi(e.target.checked)} />
             <span>
-              AI code analysis <em>needs an API key; rules run either way</em>
+              AI code analysis
+              <em>
+                {options?.model?.available
+                  ? options.model.describe
+                  : "no model found — rules run either way"}
+              </em>
             </span>
           </label>
 
@@ -115,10 +204,57 @@ export default function App() {
         </section>
 
         <section className="panel results">
-          {!report && !error && <Empty />}
+          {intent && <IntentBadge intent={intent} />}
+          {generated && <Generated generated={generated} />}
+          {!report && !generated && !error && !intent && <Empty />}
           {report && <Results report={report} />}
         </section>
       </div>
+    </div>
+  );
+}
+
+function IntentBadge({ intent }) {
+  const weak = intent.confidence < 0.5;
+  return (
+    <div className={weak ? "intent weak" : "intent"}>
+      <div>
+        <strong>Understood as:</strong> {intent.summary}
+        {intent.objectives.length > 0 && (
+          <> — for {intent.objectives.join(", ")}</>
+        )}
+      </div>
+      <div className="muted">
+        {Math.round(intent.confidence * 100)}% confident
+        {intent.because.length > 0 && <> · matched {intent.because.join(", ")}</>}
+      </div>
+      {weak && (
+        <div className="muted">
+          Not sure what you meant, so everything was analyzed instead.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Generated({ generated }) {
+  return (
+    <div className="block">
+      <h3>
+        {generated.accepted ? "Generated and verified" : "Could not generate"}
+      </h3>
+      {generated.accepted ? (
+        <p className="muted">
+          It compiles cleanly after {generated.attempts} attempt
+          {generated.attempts === 1 ? "" : "s"}
+          {generated.provider ? ` · ${generated.provider}` : ""}. It has been put
+          in the editor — press Analyze to check its quality.
+        </p>
+      ) : (
+        <p className="note">{generated.failure_reason}</p>
+      )}
+      {generated.code && <pre>{generated.code}</pre>}
+      {generated.notes && <p className="muted">{generated.notes}</p>}
     </div>
   );
 }

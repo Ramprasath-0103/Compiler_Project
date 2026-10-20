@@ -91,7 +91,14 @@ class RunResult:
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
 
-def compile_and_run(source: Path, stdin: str = "", timeout: float = 5.0,
+# Generous on purpose. At 5s a crashing program on a loaded machine
+# intermittently reported R_TIMEOUT instead of the segfault that actually
+# happened -- the timeout masked the real finding. A hung program still gets
+# caught; it just takes a few seconds longer to say so.
+DEFAULT_TIMEOUT = 15.0
+
+
+def compile_and_run(source: Path, stdin: str = "", timeout: float = DEFAULT_TIMEOUT,
                     extra_flags: tuple[str, ...] = (),
                     sanitize: bool = True) -> RunResult:
     cc = find_compiler()

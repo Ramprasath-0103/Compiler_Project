@@ -1,0 +1,267 @@
+"""Where the model comes from, local first.
+
+Three providers, tried in this order:
+
+  1. LM Studio, or anything else speaking the OpenAI chat API on localhost.
+     No API key, no account, no network. This is the default.
+  2. Ollama, same idea, different port and shape.
+  3. Anthropic, when credentials happen to exist.
+
+Local first is deliberate: the project should work on the machine it is
+demonstrated on without anyone having to hold an API key. A small local model
+gives rougher answers than a large hosted one -- that is a real trade, and the
+provider is reported in the output so nobody has to guess which produced what.
+
+The local providers use urllib from the standard library, so running without
+an API key needs no extra Python package either.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Type, TypeVar
+
+LMSTUDIO_URL = os.environ.get("NLPCC_LOCAL_URL", "http://127.0.0.1:1234/v1")
+OLLAMA_URL = os.environ.get("NLPCC_OLLAMA_URL", "http://127.0.0.1:11434")
+ANTHROPIC_MODEL = "claude-opus-5-5"
+
+PROBE_TIMEOUT = 1.5
+REQUEST_TIMEOUT = 180.0      # a small local model on CPU is not fast
+
+T = TypeVar("T")
+
+
+@dataclass
+class Provider:
+    kind: str           # "lmstudio" | "ollama" | "anthropic"
+    model: str
+    detail: str = ""
+
+    @property
+    def local(self) -> bool:
+        return self.kind in ("lmstudio", "ollama")
+
+    def __str__(self) -> str:
+        where = "local, no API key" if self.local else "hosted"
+        return f"{self.model} ({self.kind}, {where})"
+
+
+def _get_json(url: str, timeout: float = PROBE_TIMEOUT):
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return json.loads(response.read())
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+
+
+def _post_json(url: str, payload: dict, timeout: float = REQUEST_TIMEOUT):
+    request = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read())
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+
+
+def _lmstudio() -> Provider | None:
+    data = _get_json(f"{LMSTUDIO_URL}/models")
+    models = (data or {}).get("data") or []
+    if not models:
+        return None
+    return Provider("lmstudio", models[0].get("id", "local-model"),
+                    f"{len(models)} model(s) loaded")
+
+
+def _ollama() -> Provider | None:
+    data = _get_json(f"{OLLAMA_URL}/api/tags")
+    models = (data or {}).get("models") or []
+    if not models:
+        return None
+    return Provider("ollama", models[0].get("name", "local-model"),
+                    f"{len(models)} model(s) available")
+
+
+def _anthropic() -> Provider | None:
+    try:
+        import anthropic
+    except ImportError:
+        return None
+    try:
+        client = anthropic.Anthropic()
+    except Exception:                            # noqa: BLE001
+        return None
+    # Constructing a client proves nothing: the SDK defers credential
+    # resolution, so a keyless client builds fine and only fails at request
+    # time. Check that something actually resolved, or we would pick this
+    # provider over a working local model and then fail every call.
+    if not (client.api_key or getattr(client, "auth_token", None)):
+        return None
+    return Provider("anthropic", ANTHROPIC_MODEL, "API credentials found")
+
+
+def available(prefer: str = "") -> Provider | None:
+    """The provider to use, or None when there is no model anywhere.
+
+    ``prefer`` pins one ("lmstudio", "ollama", "anthropic"); NLPCC_PROVIDER
+    does the same from the environment.
+    """
+    prefer = prefer or os.environ.get("NLPCC_PROVIDER", "")
+    finders = {"lmstudio": _lmstudio, "ollama": _ollama, "anthropic": _anthropic}
+    if prefer:
+        finder = finders.get(prefer)
+        return finder() if finder else None
+    for finder in (_lmstudio, _ollama, _anthropic):
+        found = finder()
+        if found is not None:
+            return found
+    return None
+
+
+def describe() -> str:
+    """One line for the CLI and the web UI."""
+    provider = available()
+    if provider is None:
+        return ("no model available -- start LM Studio's local server "
+                "(`lms server start`), run Ollama, or set an Anthropic API key")
+    return str(provider)
+
+
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+
+
+def _extract_json(text: str) -> dict | None:
+    """Pull a JSON object out of a reply, however the model wrapped it.
+
+    Small local models add prose, fences and occasionally a <think> block
+    around the answer, so finding the object matters more than insisting the
+    whole reply is valid JSON.
+    """
+    if not text:
+        return None
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+
+    fenced = _FENCE.search(text)
+    if fenced:
+        text = fenced.group(1)
+
+    start = text.find("{")
+    if start == -1:
+        return None
+    # Walk to the matching brace, ignoring braces inside strings.
+    depth, in_string, escaped = 0, False, False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:index + 1])
+                except ValueError:
+                    return None
+    return None
+
+
+def _local_chat(provider: Provider, system: str, prompt: str,
+                max_tokens: int = 4096) -> str:
+    """One chat round trip to a local server.
+
+    max_tokens has to be sent explicitly: the server's own default is small
+    enough to cut a generated program off mid-string, which arrives as a
+    truncated JSON object and fails to parse with no obvious cause.
+    """
+    if provider.kind == "ollama":
+        data = _post_json(f"{OLLAMA_URL}/api/chat", {
+            "model": provider.model, "stream": False,
+            "options": {"num_predict": max_tokens, "temperature": 0.2},
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+        })
+        return ((data or {}).get("message") or {}).get("content", "")
+
+    data = _post_json(f"{LMSTUDIO_URL}/chat/completions", {
+        "model": provider.model,
+        "temperature": 0.2,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": prompt}],
+    })
+    choices = (data or {}).get("choices") or []
+    if not choices:
+        return ""
+    return (choices[0].get("message") or {}).get("content", "")
+
+
+# Small local models produce a malformed reply often enough that one attempt
+# is not a fair test of them -- usually a bad escape inside a string, which
+# json.loads rejects. Hosted models do not need this.
+LOCAL_ATTEMPTS = 3
+
+
+def complete(system: str, prompt: str, schema: Type[T],
+             provider: Provider | None = None,
+             max_tokens: int = 4096) -> T | None:
+    """Ask for one object matching ``schema`` (a pydantic model).
+
+    Returns None rather than raising for every failure -- no provider, a
+    refused connection, a reply that is not JSON, a reply that does not match
+    the schema. Callers treat None as "the model had nothing to add".
+    """
+    provider = provider or available()
+    if provider is None:
+        return None
+
+    if provider.kind == "anthropic":
+        try:
+            import anthropic
+            client = anthropic.Anthropic()
+            response = client.messages.parse(
+                model=provider.model, max_tokens=max_tokens, system=system,
+                output_config={"effort": "low"},
+                messages=[{"role": "user", "content": prompt}],
+                output_format=schema)
+            return getattr(response, "parsed_output", None)
+        except Exception:                        # noqa: BLE001
+            return None
+
+    # Local models have no structured-output mode we can rely on, so the
+    # schema goes in the prompt and the reply is validated on the way back.
+    try:
+        shape = json.dumps(schema.model_json_schema(), indent=None)
+    except Exception:                            # noqa: BLE001
+        return None
+
+    instructions = (
+        f"{system}\n\n"
+        "Reply with one JSON object and nothing else. No prose, no code fence.\n"
+        "Escape every newline and quote inside a JSON string correctly.\n"
+        f"It must match this JSON schema:\n{shape}"
+    )
+    for _ in range(LOCAL_ATTEMPTS):
+        raw = _local_chat(provider, instructions, prompt, max_tokens=max_tokens)
+        data = _extract_json(raw)
+        if data is None:
+            continue
+        try:
+            return schema.model_validate(data)
+        except Exception:                        # noqa: BLE001 - shape mismatch
+            continue
+    return None

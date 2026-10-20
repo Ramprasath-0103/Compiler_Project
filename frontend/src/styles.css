@@ -212,3 +212,42 @@ td { padding: 5px 8px 5px 0; vertical-align: middle; }
 .generated { color: var(--warning); }
 
 .rec .meta { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+
+.askrow { display: flex; gap: 8px; }
+.askrow input {
+  flex: 1;
+  background: #0d0f15;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.askrow input:focus { outline: 1px solid var(--accent); }
+
+button.secondary { width: auto; margin: 0; padding: 10px 18px; }
+
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+button.example {
+  width: auto;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+button.example:hover { color: var(--accent); border-color: var(--accent); }
+
+.intent {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.intent.weak { border-left-color: var(--warning); }
+.intent .muted { font-size: 12px; margin-top: 2px; }

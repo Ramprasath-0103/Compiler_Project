@@ -73,19 +73,21 @@ def test_markdown_fences_are_stripped() -> None:
         "int main(void){return 0;}"
 
 
-def test_generation_without_credentials_fails_honestly() -> None:
+def test_generation_without_a_model_fails_honestly() -> None:
     """It must not return code it never validated, or claim success."""
     import nlpcc.generate as module
-    original = module._client
-    module._client = lambda: (None, "no API credentials available (test)")
+    from nlpcc import models
+
+    original = models.available
+    models.available = lambda prefer="": None
     try:
         result = module.generate("a program that prints hello")
     finally:
-        module._client = original
+        models.available = original
 
     assert result.accepted is False
     assert result.code == ""
-    assert "credentials" in result.failure_reason
+    assert result.failure_reason
     assert json.loads(json.dumps(result.to_dict()))["accepted"] is False
 
 

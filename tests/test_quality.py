@@ -188,16 +188,17 @@ def test_ai_findings_are_scored_by_their_own_dimension() -> None:
     assert result.for_dimension("security")[0].code == "AI_SECURITY"
 
 
-def test_ai_analysis_is_silent_without_credentials() -> None:
+def test_ai_analysis_is_silent_without_a_model() -> None:
     """The rules must work alone; the AI stage is additive, never required."""
+    from nlpcc import models
     from nlpcc.quality import ai
 
-    original = ai._client
-    ai._client = lambda: (None, "no API credentials available (test)")
+    original = models.available
+    models.available = lambda prefer="": None
     try:
         assert ai.analyze(CORPUS / "clean.c") == []
     finally:
-        ai._client = original
+        models.available = original
 
 
 def test_ai_stage_does_not_change_the_rule_findings() -> None:

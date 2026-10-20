@@ -22,7 +22,9 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import pipeline
+from . import models, pipeline
+from .nlp import detect
+from .nlp import route as nlp_route
 from .optimize import OBJECTIVES, recommend
 from .quality.rules import RULES as QUALITY_RULES
 from .quality.score import WEIGHTS
@@ -49,6 +51,10 @@ def _options() -> dict:
         "dimensions": [
             {"name": name, "weight": weight} for name, weight in WEIGHTS.items()
         ],
+        "model": {
+            "available": models.available() is not None,
+            "describe": models.describe(),
+        },
         "rules": [
             {"code": rule.code, "dimension": rule.dimension,
              "title": rule.title, "penalty": rule.penalty,
@@ -128,7 +134,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": f"no such endpoint: {self.path}"})
 
     def do_POST(self) -> None:                   # noqa: N802
-        if self.path.rstrip("/") != "/api/analyze":
+        route = self.path.rstrip("/")
+        if route not in ("/api/analyze", "/api/ask"):
             self._send(404, {"error": f"no such endpoint: {self.path}"})
             return
 
@@ -145,6 +152,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": "the request body must be a JSON object"})
             return
 
+        if route == "/api/ask":
+            text = payload.get("text")
+            if not isinstance(text, str) or not text.strip():
+                self._send(400, {"error": "say what you would like done"})
+                return
+            try:
+                self._send(200, nlp_route.run(
+                    text, code=str(payload.get("code") or ""),
+                    use_model=bool(payload.get("ai"))))
+            except Exception as exc:             # noqa: BLE001
+                self._send(500, {"error": f"{exc.__class__.__name__}: {exc}"})
+            return
+
         parsed = _parse(payload)
         if isinstance(parsed, str):
             self._send(400, {"error": parsed})
@@ -159,7 +179,8 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port: int = DEFAULT_PORT) -> None:
     httpd = ThreadingHTTPServer((HOST, port), Handler)
     print(f"\n  nlpcc API on http://{HOST}:{port}")
-    print("  endpoints: GET /api/options, POST /api/analyze")
+    print("  endpoints: GET /api/options, POST /api/analyze, POST /api/ask")
+    print(f"  model: {models.describe()}")
     print("  bound to localhost only -- it compiles and runs submitted code\n")
     try:
         httpd.serve_forever()

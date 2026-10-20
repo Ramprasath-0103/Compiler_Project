@@ -165,8 +165,14 @@ in one place. No PDF — a Markdown file prints.
 
 ### The model layer and its offline path
 
-Claude (`claude-opus-5-5`) via the Anthropic SDK, in `nlpcc/explain/llm.py`,
-strictly *behind* the rule table: only findings no rule matched are sent.
+Local first (`nlpcc/models.py`): LM Studio or Ollama on localhost need no API
+key, and Anthropic is used only when credentials exist. The project therefore
+runs its AI features on the machine it is demonstrated on, with no account.
+Small local models are rougher and slower, so the provider is reported with
+every answer it produced.
+
+The explanation layer sits strictly *behind* the rule table: only findings no
+rule matched are sent.
 Answers are cached on disk keyed by the diagnostic's shape with
 program-specific names stripped, so repeat runs are free and work offline.
 Missing package, missing credentials, no network or a malformed reply each

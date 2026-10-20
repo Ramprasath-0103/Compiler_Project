@@ -171,6 +171,13 @@ def main(argv: list[str] | None = None) -> int:
     gn.add_argument("-o", "--output", type=Path, help="write the program here")
     gn.add_argument("--json", action="store_true")
 
+    ak = sub.add_parser("ask", help="say what you want in plain English")
+    ak.add_argument("request", nargs="+", help='e.g. "why does this not compile"')
+    ak.add_argument("-f", "--file", type=Path, help="the program to work on")
+    ak.add_argument("--ai", action="store_true", help="use the model where it helps")
+    ak.add_argument("--json", action="store_true")
+
+    sub.add_parser("models", help="show which model is available")
     sub.add_parser("rules", help="list the explanation rules")
 
     sv = sub.add_parser("serve", help="run the HTTP API for the web frontend")
@@ -181,6 +188,72 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         from .server import serve
         serve(args.port)
+        return 0
+
+    if args.command == "models":
+        from . import models as model_registry
+        print(f"\n  {model_registry.describe()}\n")
+        return 0
+
+    if args.command == "ask":
+        from .nlp import route as nlp_route
+        text = " ".join(args.request)
+        code = ""
+        if args.file:
+            if not args.file.exists():
+                print(f"nlpcc: no such file: {args.file}", file=sys.stderr)
+                return 1
+            code = args.file.read_text()
+
+        result = nlp_route.run(text, code=code,
+                               source=args.file if args.file else None,
+                               use_model=args.ai)
+        if args.json:
+            print(json.dumps(result, indent=2))
+            return 0
+
+        intent = result["intent"]
+        print(f"\n  Understood as: {intent['summary']}"
+              f"  (confidence {intent['confidence']:.0%})")
+        if intent["objectives"]:
+            print(f"  Optimizing for: {', '.join(intent['objectives'])}")
+        if intent["because"]:
+            print(f"  Matched: {', '.join(intent['because'])}")
+        if intent["confidence"] < 0.5:
+            print("  Not sure what you meant -- analyzing everything instead.")
+
+        if "error" in result:
+            print(f"\n  {result['error']}\n")
+            return 1
+
+        if "generated" in result:
+            gen = result["generated"]
+            if gen["accepted"]:
+                print(f"\n  Wrote and verified it ({gen['attempts']} attempt(s), "
+                      f"{gen.get('provider', 'model')}):\n")
+                print(gen["code"])
+            else:
+                print(f"\n  Could not: {gen['failure_reason']}\n", file=sys.stderr)
+                return 1
+            return 0
+
+        report = result["report"]
+        print(f"\n  {report['summary']['errors']} error(s), "
+              f"{report['summary']['warnings']} warning(s)")
+        for diag in report["diagnostics"]:
+            where = f"line {diag['position']['line']}" if diag["position"] else "file"
+            title = (diag["meta"] or {}).get("title") or diag["message"]
+            print(f"\n  {diag['severity'].upper()}  {where}\n  {title}")
+            if diag["explanation"]:
+                print(f"\n  What it means: {diag['explanation']}")
+                print(f"  How to fix it: {diag['fix']}")
+        if report["score"]:
+            print(f"\n  Quality score: {report['score']['overall']}/100 "
+                  f"({report['score']['grade']})")
+        for rec in report["recommendations"]:
+            print(f"\n  Suggestion ({rec['impact']} impact): {rec['title']}")
+            print(f"  {rec['action']}")
+        print()
         return 0
 
     if args.command == "rules":
