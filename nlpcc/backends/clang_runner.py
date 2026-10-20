@@ -11,6 +11,7 @@ Nothing here parses C. It shells out, scrapes the diagnostic lines, and emits
 
 from __future__ import annotations
 
+import functools
 import re
 import shutil
 import subprocess
@@ -42,9 +43,23 @@ _TOKEN_NAMES = {
     "[": "lbracket", "]": "rbracket", "=": "equals", "*": "star",
 }
 
-CC_CANDIDATES = ("gcc-15", "gcc-14", "gcc", "clang", "cc")
+# clang first, deliberately. Every diagnostic flag below is a clang spelling
+# and the output parser is written against clang's format, so preferring a
+# real GNU gcc -- which a Homebrew install puts on PATH as gcc-15 -- meant
+# sending it options it does not have:
+#
+#   -ferror-limit=0         gcc calls this -fmax-errors
+#   -fno-caret-diagnostics  gcc calls this -fno-diagnostics-show-caret
+#   -fno-color-diagnostics  gcc calls this -fno-diagnostics-color
+#
+# GNU gcc on macOS also cannot link Apple's UndefinedBehaviorSanitizer
+# runtime, so -fsanitize=undefined fails at link time there. On a Mac with
+# Homebrew gcc installed, the old order broke both the syntax check and the
+# sanitized run while a plain clang test worked perfectly -- which is exactly
+# how it looks from the outside.
+CC_CANDIDATES = ("clang", "cc", "gcc", "gcc-15", "gcc-14")
 
-DEFAULT_FLAGS = (
+CLANG_FLAGS = (
     "-fsyntax-only",
     "-fno-caret-diagnostics",
     "-fno-color-diagnostics",
@@ -53,18 +68,45 @@ DEFAULT_FLAGS = (
     "-Wextra",
 )
 
+GCC_FLAGS = (
+    "-fsyntax-only",
+    "-fno-diagnostics-show-caret",
+    "-fno-diagnostics-color",
+    "-fmax-errors=0",       # the gcc spelling of the same thing
+    "-Wall",
+    "-Wextra",
+)
+
+DEFAULT_FLAGS = CLANG_FLAGS      # kept for callers that pass flags themselves
+
 
 def find_compiler() -> str | None:
-    """Prefer a real GCC when one is installed, else fall back to clang.
-
-    On macOS ``gcc`` is a clang shim, so the name alone proves nothing; the
-    distinction only matters for flags, and DEFAULT_FLAGS stays clang-safe.
-    """
+    """The C compiler to use, clang for preference."""
     for name in CC_CANDIDATES:
         path = shutil.which(name)
         if path:
             return path
     return None
+
+
+@functools.lru_cache(maxsize=8)
+def is_clang(compiler: str) -> bool:
+    """Ask the compiler what it is.
+
+    The name proves nothing in either direction: on macOS ``gcc`` is a clang
+    shim, and on Linux ``cc`` is usually real gcc. Only --version is honest.
+    """
+    try:
+        proc = subprocess.run([compiler, "--version"], capture_output=True,
+                              text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "clang" in (proc.stdout + proc.stderr).lower()
+
+
+def flags_for(compiler: str) -> tuple[str, ...]:
+    """Diagnostic flags this compiler actually understands."""
+    return CLANG_FLAGS if is_clang(compiler) else GCC_FLAGS
 
 
 def _classify(message: str, flag: str, severity: Severity) -> tuple[Phase, str]:
@@ -152,7 +194,7 @@ def analyze(source: Path, extra_flags: tuple[str, ...] = (), timeout: float = 20
             )
         ]
     proc = subprocess.run(
-        [cc, *DEFAULT_FLAGS, *extra_flags, str(source)],
+        [cc, *flags_for(cc), *extra_flags, str(source)],
         capture_output=True,
         text=True,
         timeout=timeout,

@@ -50,9 +50,21 @@ The terminal interface, if you prefer it:
 ./.venv/bin/python -m nlpcc rules
 ```
 
-Needs a C compiler on `PATH` (clang or gcc). Note that on macOS `gcc` is a
-clang shim — harmless here, but it means `-fdiagnostics-format=json` is
-unavailable, which is why diagnostics are scraped from text.
+Needs a C compiler on `PATH`. **clang is preferred** and is what the
+diagnostic flags and the output parser are written against; on macOS
+`/usr/bin/gcc` is a clang shim, which is fine. A real GNU gcc (what Homebrew
+installs as `gcc-15`) is used only if no clang is found, with its own flag
+spellings, and on macOS it cannot link Apple's sanitizer runtime.
+
+If it works on one machine and not another:
+
+```bash
+./.venv/bin/python -m nlpcc doctor
+```
+
+checks the compiler, the diagnostic flags, building and running, the
+sanitizer, the model and the frontend, and prints the fix for whatever is
+missing.
 
 ## Asking in plain English
 

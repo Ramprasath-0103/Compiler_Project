@@ -88,6 +88,7 @@ class RunResult:
     exit_code: int | None = None
     signal_number: int | None = None
     timed_out: bool = False
+    sanitized: bool = True       # false when the sanitizer could not be linked
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
 
@@ -110,10 +111,39 @@ def compile_and_run(source: Path, stdin: str = "", timeout: float = DEFAULT_TIME
 
     with tempfile.TemporaryDirectory(prefix="nlpcc-run-") as tmp:
         binary = Path(tmp) / "program"
-        flags = (*SANITIZE_FLAGS, *extra_flags) if sanitize else extra_flags
-        build = subprocess.run(
-            [cc, "-g", "-O0", "-Wall", *flags, str(source), "-o", str(binary)],
-            capture_output=True, text=True, timeout=60)
+        def build_with(flags: tuple[str, ...]):
+            return subprocess.run(
+                [cc, "-g", "-O0", "-Wall", *flags, str(source), "-o", str(binary)],
+                capture_output=True, text=True, timeout=60)
+
+        sanitized = bool(sanitize)
+        flags = (*SANITIZE_FLAGS, *extra_flags) if sanitized else extra_flags
+        build = build_with(flags)
+
+        if build.returncode != 0 and sanitized:
+            # The sanitizer is an enhancement, not a requirement. Its runtime
+            # can be missing or unlinkable -- a GNU gcc on macOS cannot link
+            # Apple's, and a partial toolchain install breaks it too -- and
+            # that must not be reported as the user's program failing to
+            # build. Retry without it and say the runtime checks are off.
+            plain = build_with(tuple(extra_flags))
+            if plain.returncode == 0:
+                build, sanitized = plain, False
+            elif not parse_output(build.stderr, source):
+                # Neither build produced a diagnostic we can attribute to the
+                # source, so the toolchain itself is the problem.
+                return RunResult(compiled=False, stderr=build.stderr, diagnostics=[
+                    Diagnostic(phase=Phase.RUNTIME, severity=Severity.FATAL,
+                               message="the program could not be built: "
+                                       + (plain.stderr.strip().splitlines() or
+                                          ["the compiler gave no reason"])[-1][:300],
+                               file=str(source), code="nlpcc:build_failed",
+                               origin=Origin.EXECUTOR,
+                               fix="Check the compiler install: "
+                                   "`xcode-select --install` on macOS.",
+                               explanation="This is a problem with the compiler "
+                                           "on this machine, not with the program.")])
+
         if build.returncode != 0:
             # Compilation failed: the diagnostics are the result.
             return RunResult(compiled=False, stderr=build.stderr,
@@ -129,7 +159,8 @@ def compile_and_run(source: Path, stdin: str = "", timeout: float = DEFAULT_TIME
                            file=str(source), code="R_TIMEOUT", origin=Origin.EXECUTOR,
                            meta={"timeout": timeout})])
 
-    result = RunResult(compiled=True, stdout=run.stdout, stderr=run.stderr)
+    result = RunResult(compiled=True, stdout=run.stdout, stderr=run.stderr,
+                       sanitized=sanitized)
     result.diagnostics.extend(parse_sanitizer_output(run.stderr, source))
     if run.returncode < 0:
         signo = -run.returncode

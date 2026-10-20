@@ -71,3 +71,20 @@ def test_defaults_to_every_objective() -> None:
     assert isinstance(parsed, Options)
     assert parsed.objectives == OBJECTIVES
     assert parsed.run is False and parsed.ai is False
+
+
+def test_report_says_when_runtime_checks_were_off() -> None:
+    """Losing the sanitizer must be visible, not silent.
+
+    Without it, a divide by zero on Apple Silicon is simply not reported --
+    the program runs to completion with a meaningless value. A report that
+    looks identical either way would quietly understate what was checked.
+    """
+    import json
+
+    from nlpcc.server import Options, analyze_source
+
+    result = analyze_source(Options(code=_code("clean.c"), objectives=OBJECTIVES,
+                                    run=True, ai=False))
+    assert result["runtime_checks"] is True
+    assert json.loads(json.dumps(result))["runtime_checks"] is True

@@ -62,6 +62,12 @@ def _render(result: pipeline.Analysis, color: bool, verbose: bool) -> None:
         if verbose:
             print(f"  [code={diag.code} origin={diag.origin.value}]")
 
+    if result.run is not None and not result.run.sanitized:
+        print("\n  Runtime checks are off: the sanitizer could not be linked on "
+              "this machine,\n  so the program ran unchecked. Problems that only "
+              "appear at runtime\n  (divide by zero, out-of-bounds writes) will "
+              "not be reported.\n  Run 'nlpcc doctor' for details.")
+
     if result.run is not None:
         print("\n  --- program output ---")
         if result.run.stdout:
@@ -177,6 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     ak.add_argument("--ai", action="store_true", help="use the model where it helps")
     ak.add_argument("--json", action="store_true")
 
+    sub.add_parser("doctor", help="check this machine's toolchain")
     sub.add_parser("models", help="show which model is available")
     sub.add_parser("rules", help="list the explanation rules")
 
@@ -189,6 +196,10 @@ def main(argv: list[str] | None = None) -> int:
         from .server import serve
         serve(args.port)
         return 0
+
+    if args.command == "doctor":
+        from .doctor import report as doctor_report
+        return doctor_report()
 
     if args.command == "models":
         from . import models as model_registry

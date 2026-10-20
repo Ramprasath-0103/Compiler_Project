@@ -30,6 +30,7 @@ class Report:
     objectives: tuple[str, ...] = OBJECTIVES
     frontend_available: bool = False
     ran: bool = False
+    sanitized: bool = True       # false when the sanitizer could not be linked
     program_output: str = ""
 
     # -- views the renderers use ------------------------------------------
@@ -74,6 +75,7 @@ class Report:
             "source": str(self.source),
             "generated_at": self.generated_at,
             "compiles": self.compiles,
+            "runtime_checks": self.sanitized,
             "frontend_available": self.frontend_available,
             "objectives": list(self.objectives),
             "summary": {
@@ -130,5 +132,6 @@ def build(analysis, recommendations: list[Recommendation] | None = None,
         objectives=objectives,
         frontend_available=analysis.frontend_available,
         ran=analysis.run is not None,
+        sanitized=(analysis.run.sanitized if analysis.run is not None else True),
         program_output=program_output,
     )

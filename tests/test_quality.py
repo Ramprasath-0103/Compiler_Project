@@ -226,3 +226,36 @@ def test_ai_stage_adds_to_the_rules_without_changing_them(monkeypatch) -> None:
     assert "AI_SECURITY" not in {d.code for d in without.diagnostics}
     # And it is scored: the AI finding costs the dimension it names.
     assert with_ai.score.dimensions["security"] == 85
+
+
+# --- toolchain compatibility --------------------------------------------------
+def test_diagnostic_flags_match_the_compiler() -> None:
+    """clang-only spellings sent to GNU gcc fail before anything is analyzed.
+
+    Homebrew puts a real gcc on PATH as gcc-15, and we used to prefer it over
+    clang while sending -ferror-limit, -fno-caret-diagnostics and
+    -fno-color-diagnostics, none of which GNU gcc has.
+    """
+    from nlpcc.backends import clang_runner as runner
+
+    assert "-ferror-limit=0" in runner.CLANG_FLAGS
+    assert "-fmax-errors=0" in runner.GCC_FLAGS
+    assert not any(f.startswith("-ferror-limit") for f in runner.GCC_FLAGS)
+    assert not any(f.startswith("-fmax-errors") for f in runner.CLANG_FLAGS)
+
+    # clang is preferred: the parser is written against its output format.
+    assert runner.CC_CANDIDATES[0] == "clang"
+    assert runner.CC_CANDIDATES.index("clang") < runner.CC_CANDIDATES.index("gcc")
+
+
+def test_a_sanitizer_that_cannot_link_does_not_fail_the_build(monkeypatch) -> None:
+    """A missing sanitizer runtime is a toolchain gap, not a broken program."""
+    from nlpcc.backends import executor
+
+    monkeypatch.setattr(executor, "SANITIZE_FLAGS",
+                        ("-fsanitize=undefined", "-Wl,--nonexistent-option-xyz"))
+    result = executor.compile_and_run(CORPUS / "clean.c")
+
+    assert result.compiled is True          # it still built
+    assert result.sanitized is False        # and admits the checks were off
+    assert result.stdout.strip() == "7"
