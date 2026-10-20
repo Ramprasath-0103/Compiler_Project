@@ -21,3 +21,7 @@ reports/
 
 # model explanation cache
 .nlpcc-cache/
+
+# frontend
+node_modules/
+frontend/dist/

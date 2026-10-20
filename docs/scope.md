@@ -198,5 +198,7 @@ worked.
 
 ## Explicitly not building
 
-React frontend, PostgreSQL, multi-language support, IDE plugin, anything
-networked. The CLI is the deliverable.
+PostgreSQL, multi-language support, IDE plugin, anything reachable over a
+network. The CLI is the deliverable; the React frontend in `frontend/` is a
+local view onto the same pipeline, and its API binds to 127.0.0.1 only
+because it compiles and runs submitted code.

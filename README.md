@@ -41,6 +41,23 @@ Needs a C compiler on `PATH` (clang or gcc). Note that on macOS `gcc` is a
 clang shim — harmless here, but it means `-fdiagnostics-format=json` is
 unavailable, which is why diagnostics are scraped from text.
 
+## The web interface
+
+Two processes: the Python API, and the React dev server that proxies to it.
+
+```bash
+./.venv/bin/python -m nlpcc serve            # terminal 1 -- API on :8000
+cd frontend && npm install && npm run dev    # terminal 2 -- UI on :5173
+```
+
+Open http://localhost:5173. Paste C code, pick what to optimize for, and
+press Analyze. The options are fetched from `/api/options`, so the UI can
+only ever offer objectives the analyzer actually supports.
+
+The server binds to localhost and nothing else: "Run the program" compiles and
+executes whatever is submitted, with a timeout and a scratch directory as its
+only containment. That is fine on your own machine and nowhere else.
+
 ## How it fits together
 
 A diagram of the whole flow is in [docs/workflow.md](docs/workflow.md).

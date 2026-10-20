@@ -173,7 +173,15 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("rules", help="list the explanation rules")
 
+    sv = sub.add_parser("serve", help="run the HTTP API for the web frontend")
+    sv.add_argument("--port", type=int, default=8000)
+
     args = ap.parse_args(argv)
+
+    if args.command == "serve":
+        from .server import serve
+        serve(args.port)
+        return 0
 
     if args.command == "rules":
         for rule in rules.RULES:

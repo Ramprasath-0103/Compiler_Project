@@ -132,9 +132,13 @@ def analyze(source: Path, run: bool = False, stdin: str = "",
 
     result.diagnostics = sort_diagnostics(rules.explain_all(result.diagnostics))
 
-    # Scored from everything found, so compiler errors cost the practices
-    # dimension rather than being invisible to the score.
-    if quality:
+    # Scored only when the quality pass actually ran. A program that does not
+    # compile never reaches that pass, and scoring it on its compile errors
+    # alone produced a 90 "excellent" for code that does not build -- the
+    # weighted mean had almost nothing to deduct from. No score is the honest
+    # answer there: fix the errors, then the quality analysis has something to
+    # measure.
+    if quality and result.file_metrics is not None:
         result.score = quality_score.compute(result.diagnostics)
 
     return result
