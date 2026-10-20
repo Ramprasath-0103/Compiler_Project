@@ -190,22 +190,39 @@ def test_ai_findings_are_scored_by_their_own_dimension() -> None:
 
 def test_ai_analysis_is_silent_without_a_model() -> None:
     """The rules must work alone; the AI stage is additive, never required."""
-    from nlpcc import models
     from nlpcc.quality import ai
 
-    original = models.available
-    models.available = lambda prefer="": None
-    try:
-        assert ai.analyze(CORPUS / "clean.c") == []
-    finally:
-        models.available = original
+    assert ai.analyze(CORPUS / "clean.c") == []
 
 
-def test_ai_stage_does_not_change_the_rule_findings() -> None:
+def test_ai_stage_adds_to_the_rules_without_changing_them(monkeypatch) -> None:
+    """The AI stage runs beside the rule engine, never in place of it.
+
+    The model is faked: what is being tested is the merge, and a real call
+    would make this test depend on a model being installed.
+    """
     from nlpcc import pipeline
-    with_ai = pipeline.analyze(CORPUS / "quality" / "deep_nesting.c",
-                               quality=True, ai=True)
-    without = pipeline.analyze(CORPUS / "quality" / "deep_nesting.c", quality=True)
-    rule_codes = lambda a: sorted(d.code for d in a.diagnostics
-                                  if d.origin.value == "rules")
+    from nlpcc.diagnostics import Diagnostic, Origin, Phase, Position, Severity
+    from nlpcc.quality import ai
+
+    invented = Diagnostic(
+        phase=Phase.QUALITY, severity=Severity.WARNING,
+        message="something only a model would notice", code="AI_SECURITY",
+        position=Position(3), origin=Origin.AI, explanation="...", fix="...",
+        meta={"dimension": "security", "penalty": 15, "explained_by": "ai",
+              "generated": True})
+    monkeypatch.setattr(ai, "analyze", lambda source: [invented])
+
+    case = CORPUS / "quality" / "deep_nesting.c"
+    with_ai = pipeline.analyze(case, quality=True, ai=True)
+    without = pipeline.analyze(case, quality=True)
+
+    def rule_codes(analysis):
+        return sorted(d.code for d in analysis.diagnostics
+                      if d.origin.value == "rules")
+
     assert rule_codes(with_ai) == rule_codes(without)
+    assert "AI_SECURITY" in {d.code for d in with_ai.diagnostics}
+    assert "AI_SECURITY" not in {d.code for d in without.diagnostics}
+    # And it is scored: the AI finding costs the dimension it names.
+    assert with_ai.score.dimensions["security"] == 85

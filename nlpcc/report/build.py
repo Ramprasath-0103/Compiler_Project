@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..diagnostics import Diagnostic, Phase, Severity
+from ..diagnostics import Diagnostic, Origin, Phase, Severity
 from ..optimize import OBJECTIVES, Recommendation
 from ..quality.metrics import FileMetrics
 from ..quality.score import Score
@@ -43,8 +43,20 @@ class Report:
         return [d for d in self.diagnostics if d.severity is Severity.WARNING]
 
     @property
+    def compile_errors(self) -> list[Diagnostic]:
+        """Errors from the compiler, not from the quality rules.
+
+        A buffer overflow is reported as an error because it is one, but it
+        is not a *compile* error: the program built fine. Counting it as one
+        made the report say "does not compile" about a program that had just
+        compiled and run.
+        """
+        return [d for d in self.errors
+                if d.origin in (Origin.FRONTEND, Origin.CLANG)]
+
+    @property
     def compiles(self) -> bool:
-        return not self.errors
+        return not self.compile_errors
 
     def by_phase(self, phase: Phase) -> list[Diagnostic]:
         return [d for d in self.diagnostics if d.phase is phase]
@@ -66,6 +78,7 @@ class Report:
             "objectives": list(self.objectives),
             "summary": {
                 "errors": len(self.errors),
+                "compile_errors": len(self.compile_errors),
                 "warnings": len(self.warnings),
                 "findings": len(self.diagnostics),
                 "recommendations": len(self.recommendations),

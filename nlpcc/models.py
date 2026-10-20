@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -31,7 +32,13 @@ OLLAMA_URL = os.environ.get("NLPCC_OLLAMA_URL", "http://127.0.0.1:11434")
 ANTHROPIC_MODEL = "claude-opus-5-5"
 
 PROBE_TIMEOUT = 1.5
-REQUEST_TIMEOUT = 180.0      # a small local model on CPU is not fast
+REQUEST_TIMEOUT = 90.0       # a small local model on CPU is not fast
+
+# A token budget is a budget, not a limit a small model stops short of: given
+# 8192 it will cheerfully produce 8192 tokens of rambling notes, which on a
+# local CPU model is several minutes for one answer. These ceilings are sized
+# for what the task actually needs.
+MAX_TOKENS_LOCAL = 1536
 
 T = TypeVar("T")
 
@@ -133,6 +140,45 @@ def describe() -> str:
     return str(provider)
 
 
+def complete_text(system: str, prompt: str, provider: Provider | None = None,
+                  max_tokens: int = 4096,
+                  reasons: list[str] | None = None) -> str:
+    """Ask for plain text back, with no JSON wrapper.
+
+    Code generation uses this rather than `complete`. Wrapping a C program in
+    a JSON string means escaping every newline, quote and backslash in it, and
+    a small local model gets that wrong far more often than it gets the C
+    wrong -- measured at zero usable replies out of five, every one of them
+    failing on the escaping rather than the program. Asking for the code
+    directly removes the problem instead of retrying through it.
+    """
+    provider = provider or available()
+    if provider is None:
+        if reasons is not None:
+            reasons.append("no model available")
+        return ""
+
+    if provider.kind == "anthropic":
+        try:
+            import anthropic
+            client = anthropic.Anthropic()
+            response = client.messages.create(
+                model=provider.model, max_tokens=max_tokens, system=system,
+                messages=[{"role": "user", "content": prompt}])
+            return "".join(block.text for block in response.content
+                           if getattr(block, "type", "") == "text")
+        except Exception as exc:                 # noqa: BLE001
+            if reasons is not None:
+                reasons.append(f"the API call failed ({exc.__class__.__name__})")
+            return ""
+
+    text = _local_chat(provider, system, prompt,
+                       max_tokens=min(max_tokens, MAX_TOKENS_LOCAL))
+    if not text and reasons is not None:
+        reasons.append("the model server returned nothing")
+    return text
+
+
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
@@ -218,15 +264,26 @@ LOCAL_ATTEMPTS = 3
 
 def complete(system: str, prompt: str, schema: Type[T],
              provider: Provider | None = None,
-             max_tokens: int = 4096) -> T | None:
+             max_tokens: int = 4096,
+             reasons: list[str] | None = None) -> T | None:
     """Ask for one object matching ``schema`` (a pydantic model).
 
     Returns None rather than raising for every failure -- no provider, a
     refused connection, a reply that is not JSON, a reply that does not match
     the schema. Callers treat None as "the model had nothing to add".
+
+    Pass ``reasons`` to collect why each attempt failed. Without it a caller
+    can only say "no code", which is indistinguishable from the model being
+    slow, unreachable, or producing malformed JSON -- three problems with
+    three different answers.
     """
+    def note(text: str) -> None:
+        if reasons is not None:
+            reasons.append(text)
+
     provider = provider or available()
     if provider is None:
+        note("no model available")
         return None
 
     if provider.kind == "anthropic":
@@ -239,7 +296,8 @@ def complete(system: str, prompt: str, schema: Type[T],
                 messages=[{"role": "user", "content": prompt}],
                 output_format=schema)
             return getattr(response, "parsed_output", None)
-        except Exception:                        # noqa: BLE001
+        except Exception as exc:                 # noqa: BLE001
+            note(f"the API call failed ({exc.__class__.__name__})")
             return None
 
     # Local models have no structured-output mode we can rely on, so the
@@ -255,13 +313,26 @@ def complete(system: str, prompt: str, schema: Type[T],
         "Escape every newline and quote inside a JSON string correctly.\n"
         f"It must match this JSON schema:\n{shape}"
     )
-    for _ in range(LOCAL_ATTEMPTS):
-        raw = _local_chat(provider, instructions, prompt, max_tokens=max_tokens)
+    # Keep a local model on a short leash; see MAX_TOKENS_LOCAL.
+    budget = min(max_tokens, MAX_TOKENS_LOCAL)
+    deadline = time.monotonic() + REQUEST_TIMEOUT
+
+    for attempt in range(LOCAL_ATTEMPTS):
+        if time.monotonic() > deadline:
+            note(f"ran out of time after {attempt} attempt(s) "
+                 f"({REQUEST_TIMEOUT:.0f}s budget)")
+            return None
+        raw = _local_chat(provider, instructions, prompt, max_tokens=budget)
+        if not raw:
+            note("the model server returned nothing")
+            continue
         data = _extract_json(raw)
         if data is None:
+            note(f"the reply was not valid JSON ({len(raw)} chars)")
             continue
         try:
             return schema.model_validate(data)
         except Exception:                        # noqa: BLE001 - shape mismatch
+            note("the reply did not match the expected shape")
             continue
     return None

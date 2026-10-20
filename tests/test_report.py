@@ -53,3 +53,17 @@ def test_clean_program_reports_no_problems() -> None:
     assert report.diagnostics == []
     assert report.score.overall == 100
     assert "None." in to_markdown(report)
+
+
+def test_a_security_error_is_not_a_compile_error() -> None:
+    """A program with a buffer overflow still compiled.
+
+    S_UNSAFE_FUNCTION is severity error because it is a real defect, but
+    counting it as a compile error made the report say "does not compile"
+    about a program that had just built and run.
+    """
+    report = _report("security/unsafe_strcpy.c")
+    assert report.compiles is True
+    assert report.errors                     # it does have errors
+    assert report.compile_errors == []       # none of them from the compiler
+    assert "does not compile" not in to_markdown(report).lower()

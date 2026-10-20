@@ -74,16 +74,13 @@ def test_markdown_fences_are_stripped() -> None:
 
 
 def test_generation_without_a_model_fails_honestly() -> None:
-    """It must not return code it never validated, or claim success."""
-    import nlpcc.generate as module
-    from nlpcc import models
+    """It must not return code it never validated, or claim success.
 
-    original = models.available
-    models.available = lambda prefer="": None
-    try:
-        result = module.generate("a program that prints hello")
-    finally:
-        models.available = original
+    The conftest fixture simulates a machine with no model available.
+    """
+    import nlpcc.generate as module
+
+    result = module.generate("a program that prints hello")
 
     assert result.accepted is False
     assert result.code == ""
@@ -98,3 +95,30 @@ def test_rejected_program_is_not_presented_as_working() -> None:
         diagnostics=[Diagnostic(phase=Phase.SYNTAX, severity=Severity.ERROR,
                                 message="expected '}'", code="clang:expected_rbrace")])
     assert attempt.errors
+
+
+# --- recovering a program from a model's reply --------------------------------
+def test_code_is_recovered_from_whatever_wraps_it() -> None:
+    """Models wrap code in fences, prose and think blocks, however asked not to.
+
+    Generation asks for raw C rather than JSON-wrapped C on purpose: escaping
+    a program into a JSON string defeated a small local model every time, and
+    every failure was the escaping, not the C.
+    """
+    expected = "#include <stdio.h>\nint main(void) { return 0; }"
+
+    assert generate._clean(expected) == expected
+    assert generate._clean(f"```c\n{expected}\n```") == expected
+    assert generate._clean(f"Here you go:\n\n{expected}") == expected
+    assert generate._clean(f"<think>planning</think>\n{expected}") == expected
+    assert generate._clean(f"Sure!\n```\n{expected}\n```\nHope that helps") \
+        .startswith("#include")
+
+
+def test_failures_say_which_failure_it_was() -> None:
+    """'No code' is indistinguishable from slow, unreachable, or malformed."""
+    from nlpcc import models
+
+    reasons: list[str] = []
+    models.complete_text("sys", "prompt", reasons=reasons)
+    assert reasons == ["no model available"]

@@ -130,7 +130,7 @@ export default function App() {
               onClick={ask}
               disabled={busy || !request.trim()}
             >
-              Ask
+              {busy ? "Working..." : "Ask"}
             </button>
           </div>
           <div className="examples">
@@ -200,6 +200,11 @@ export default function App() {
             {busy ? "Analyzing..." : "Analyze"}
           </button>
 
+          {busy && (
+            <p className="muted">
+              Working. Generating code on a local model can take a minute.
+            </p>
+          )}
           {error && <p className="error">{error}</p>}
         </section>
 

@@ -82,14 +82,22 @@ def _strip_fence(text: str) -> str:
     return match.group(1) if match else text.strip()
 
 
-def _request(provider, description: str, previous: Attempt | None) -> tuple[str, str]:
+_LEADING_PROSE = re.compile(r"^.*?(?=#include|/\*|//|\bint\s+main\b)", re.S)
+
+
+def _clean(reply: str) -> str:
+    """Recover the program from whatever the model wrapped around it."""
+    code = _strip_fence(reply.strip())
+    code = re.sub(r"<think>.*?</think>", "", code, flags=re.S).strip()
+    code = _strip_fence(code)
+    # Drop any sentence before the first thing that can begin a C file.
+    trimmed = _LEADING_PROSE.sub("", code, count=1)
+    return (trimmed or code).strip()
+
+
+def _request(provider, description: str, previous: Attempt | None,
+             reasons: list[str] | None = None) -> tuple[str, str]:
     """One generation call. Returns (code, notes)."""
-    from pydantic import BaseModel
-
-    class Program(BaseModel):
-        code: str
-        notes: str
-
     if previous is None:
         prompt = f"Write a C program that does the following:\n\n{description}"
     else:
@@ -106,11 +114,12 @@ def _request(provider, description: str, previous: Attempt | None) -> tuple[str,
             "Fix the program. Return the complete corrected program."
         )
 
-    parsed = models.complete(SYSTEM_PROMPT, prompt, Program, provider=provider,
-                             max_tokens=8192)
-    if parsed is None:
-        return "", ""
-    return _strip_fence(parsed.code), parsed.notes.strip()
+    reply = models.complete_text(SYSTEM_PROMPT, prompt, provider=provider,
+                                 max_tokens=4096, reasons=reasons)
+    code = _clean(reply)
+    if code and reasons is not None and not code.startswith(("#", "/", "i", "v", "s")):
+        reasons.append("the reply did not look like a C program")
+    return code, ""
 
 
 def generate(description: str, workdir: Path | None = None,
@@ -135,13 +144,23 @@ def generate(description: str, workdir: Path | None = None,
         candidate = scratch / "generated.c"
 
         for _ in range(max_attempts):
+            reasons: list[str] = []
             try:
-                code, notes = _request(provider, description, previous)
+                code, notes = _request(provider, description, previous, reasons)
             except Exception as exc:             # noqa: BLE001
                 result.failure_reason = f"the model call failed ({exc.__class__.__name__})"
                 return result
             if not code.strip():
-                result.failure_reason = "the model returned no code"
+                detail = "; ".join(reasons) or "no reply"
+                if result.attempts:
+                    # Keep what the earlier attempt produced rather than
+                    # reporting nothing; it is the better of the two answers.
+                    result.failure_reason = (
+                        f"the follow-up attempt produced nothing ({detail}); "
+                        "the program below is the earlier attempt, and it does "
+                        "not compile")
+                else:
+                    result.failure_reason = f"the model produced no usable code: {detail}"
                 return result
 
             candidate.write_text(code)
