@@ -7,20 +7,24 @@ English instead of compiler jargon.
 
 ## Status
 
-Working: the diagnostic pipeline end to end — compile, detect, explain.
+All nine steps implemented. The pipeline compiles, detects, explains, scores,
+advises and reports.
 
 | Step | What | State |
 |------|------|-------|
-| 1 | Scope contract (`docs/scope.md`) | decisions recorded, grammar still to write |
-| 2 | Repo, CLI, corpus | **done** — 20 cases, 40 assertions |
+| 1 | Scope contract (`docs/scope.md`) | **done** — subset grammar settled |
+| 2 | Repo, CLI, corpus | **done** — 21 cases |
 | 3 | Pipeline + ground-truth compiler + runtime executor | **done** |
-| 4 | Our own front end (lexer → parser → semantic) | skeletons, `NotImplementedError` |
-| 5 | Explanation layer, rules first | **done** — 23 rules, 100% corpus coverage |
-| 5b | LLM enhancement for unmatched findings | not started |
-| 6 | Quality scoring, five dimensions | not started |
-| 7 | Optimization recommender | not started |
-| 8 | Report generation | not started |
-| 9 | Natural-language → C generation | not started |
+| 4 | Our own front end (lexer → parser → semantic) | **done** — owns 9 of the corpus cases |
+| 5 | Explanation layer, rules first | **done** — 100% corpus coverage |
+| 5b | Model explanations for unmatched findings | **done** — cached, optional |
+| 6 | Quality scoring, five dimensions | **done** — 14 rules, traceable score |
+| 7 | Optimization recommender | **done** — objective-filtered |
+| 8 | Report generation | **done** — JSON source, Markdown render |
+| 9 | Natural-language → C generation | **done** — validated by our own pipeline |
+
+Not built, deliberately: React frontend, PostgreSQL, multi-language support.
+The CLI is the deliverable. See `docs/scope.md`.
 
 ## Running it
 

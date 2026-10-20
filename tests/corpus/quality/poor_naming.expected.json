@@ -1,6 +1,14 @@
 {
   "title": "Single-letter names throughout",
   "run": true,
-  "expect": [],
-  "pending": "the corpus runner does not enable the quality pass; step 6 covers this case in tests/test_quality.py (R_OPAQUE_NAMES)"
+  "quality": true,
+  "expect": [
+    {
+      "line": 3,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "R_OPAQUE_NAMES",
+      "explained": true
+    }
+  ]
 }

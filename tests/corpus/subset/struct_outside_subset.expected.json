@@ -1,0 +1,20 @@
+{
+  "title": "A struct program: outside our subset, so the compiler carries it",
+  "run": false,
+  "expect": [
+    {
+      "line": 3,
+      "severity": "note",
+      "phase": "syntax",
+      "code": "W_OUTSIDE_SUBSET",
+      "explained": true
+    },
+    {
+      "line": 12,
+      "severity": "error",
+      "phase": "semantic",
+      "code": "clang:use_of_undeclared_identifier",
+      "explained": true
+    }
+  ]
+}

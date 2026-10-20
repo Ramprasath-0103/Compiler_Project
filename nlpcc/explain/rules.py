@@ -40,9 +40,290 @@ class Rule:
         return False
 
 
-# Seed set. Target is one rule per corpus case -- see tests/test_corpus.py,
-# which fails loudly for any corpus diagnostic that no rule explains.
+# Every diagnostic the project can produce needs an entry here:
+# tests/test_corpus.py fails loudly for any corpus diagnostic no rule explains,
+# and tests/test_frontend.py fails for any code our own front end can emit and
+# has not explained.
+#
+# -- our own front end ----------------------------------------------------
+# These come first on purpose. Matching is first-rule-wins, and an exact code
+# match from our own analyzer is always a better explanation than a regex over
+# a compiler's message text -- our message is written for the rule that
+# explains it. One rule per code in nlpcc.frontend.FRONTEND_CODES; the test
+# tests/test_frontend.py::test_every_frontend_code_has_a_rule enforces that.
 RULES: tuple[Rule, ...] = (
+    # phase 1 -- lexical
+    Rule(
+        code="E_UNTERMINATED_STRING",
+        title="A string is never closed",
+        explanation=(
+            "A string literal starts at a double quote and has to end at another one "
+            "on the same line. This one reaches the end of the line still open, so "
+            "everything written after it -- the closing bracket, the semicolon, even "
+            "the next few lines -- is being read as text inside the string rather than "
+            "as program. That is why a single missing quote usually produces several "
+            "errors that look unrelated: fix the quote and the others normally go with it."
+        ),
+        fix="Add the closing '\\\"' at the end of the text, before the ')' or ';'.",
+    ),
+    Rule(
+        code="E_UNTERMINATED_CHAR",
+        title="A character literal is never closed",
+        explanation=(
+            "Single quotes hold exactly one character, as in 'a' or '\\\\n', and both "
+            "quotes have to be on the same line. The opening quote here has no partner, "
+            "so the rest of the line is being read as the inside of a character. A "
+            "common cause is using single quotes where a string was meant: 'hello' is "
+            "not a string in C, \\\"hello\\\" is."
+        ),
+        fix="Close the literal with \\\"'\\\", or switch to double quotes if you meant a string.",
+    ),
+    Rule(
+        code="E_UNTERMINATED_COMMENT",
+        title="A block comment is never closed",
+        explanation=(
+            "A comment opened with '/*' runs until the matching '*/', across as many "
+            "lines as it takes. This one never finds its '*/', so the whole rest of the "
+            "file -- every function below this point -- has been swallowed into the "
+            "comment and is not being compiled at all."
+        ),
+        fix="Add '*/' where the comment was meant to end.",
+    ),
+    Rule(
+        code="E_STRAY_CHARACTER",
+        title="A character C does not use",
+        explanation=(
+            "This character has no meaning in C outside a string, a character literal "
+            "or a comment, so the compiler cannot turn it into anything. It is usually "
+            "a typo, a stray key press, or a character that came in from a word "
+            "processor or a web page -- a curly quote instead of a straight one, or a "
+            "non-breaking space that looks exactly like an ordinary space."
+        ),
+        fix="Delete the character, or retype the line in a plain-text editor.",
+    ),
+    Rule(
+        code="E_MALFORMED_NUMBER",
+        title="A number with letters in it",
+        explanation=(
+            "A number literal may end in a type suffix such as 'u', 'L' or 'f', but "
+            "nothing else: digits followed by letters are not a value C can read. This "
+            "is most often a missing operator ('2x' where '2 * x' was meant) or a "
+            "missing space."
+        ),
+        fix="Put an operator or a space between the number and the name after it.",
+    ),
+
+    # phase 2 -- syntax
+    Rule(
+        code="E_MISSING_SEMICOLON",
+        title="A statement is missing its semicolon",
+        explanation=(
+            "Every statement and declaration in C ends with a semicolon; it is how the "
+            "compiler knows where one statement stops and the next begins. Reading on "
+            "from here it found the start of something new with no ';' in between. The "
+            "position reported is the end of the unfinished statement, which is where "
+            "the semicolon belongs -- so look at that line, not the one the next error "
+            "mentions."
+        ),
+        fix="Add ';' at the end of the statement this points at.",
+    ),
+    Rule(
+        code="E_MISSING_PAREN",
+        title="A parenthesis is never closed",
+        explanation=(
+            "Parentheses have to balance: every '(' needs its ')'. The compiler reached "
+            "a point where the parenthesis had to close -- the '{' that opens a block, "
+            "or the end of the statement -- and did not find one, so it cannot tell "
+            "where the condition or the argument list ends. The attached note points at "
+            "the '(' that is still waiting."
+        ),
+        fix="Add the ')' that closes the condition or the argument list the note points at.",
+    ),
+    Rule(
+        code="E_MISSING_BRACE",
+        title="A block is never closed",
+        explanation=(
+            "Braces have to balance too: each '{' opens a block that some '}' must "
+            "close. The file ended with one still open, which is why this is reported "
+            "at the last line rather than where the mistake is. The note points at the "
+            "'{' that was left open, and that is the place to look. Indenting "
+            "consistently makes this kind of gap visible before the compiler finds it."
+        ),
+        fix="Add the '}' that closes the block the note points at.",
+    ),
+    Rule(
+        code="E_MISSING_BRACKET",
+        title="A square bracket is never closed",
+        explanation=(
+            "An array size and an array index both sit inside '[' and ']', and the "
+            "closing bracket is missing here. Without it the compiler cannot tell which "
+            "part of the line is the index and which is the rest of the expression."
+        ),
+        fix="Add the ']' after the index or the array size.",
+    ),
+    Rule(
+        code="E_MISSING_COLON",
+        title="A '? :' expression is incomplete",
+        explanation=(
+            "The conditional operator always comes in two halves: 'condition ? value if "
+            "true : value if false'. The '?' is here but the ':' is not, so the second "
+            "value is missing and the expression has no result when the condition is "
+            "false."
+        ),
+        fix="Add ':' and the value to use when the condition is false.",
+    ),
+    Rule(
+        code="E_UNEXPECTED_TOKEN",
+        title="This is not allowed here",
+        explanation=(
+            "The grammar of C allows only certain things at this position -- a "
+            "declaration at the top level of a file, a statement inside a function -- "
+            "and what is written here is none of them. Very often the real mistake is "
+            "slightly earlier: a missing semicolon, brace or parenthesis above this "
+            "line leaves the compiler in the middle of the previous construct, and this "
+            "is where it finally gives up."
+        ),
+        fix="Check the lines just above for a missing ';', ')' or '}' before changing this one.",
+    ),
+    Rule(
+        code="E_EXPECTED_EXPRESSION",
+        title="A value was expected here",
+        explanation=(
+            "At this position C needs an expression: something that produces a value, "
+            "such as a number, a variable, or a call. What is written here cannot start "
+            "one -- usually because an operator is missing its right-hand side, or "
+            "because an earlier mistake (an unclosed quote is the classic one) has left "
+            "the compiler reading the line as something other than what you typed."
+        ),
+        fix="Fix the first error reported in the file, then re-run; this one often goes with it.",
+    ),
+    Rule(
+        code="W_OUTSIDE_SUBSET",
+        title="Outside the part of C we analyze",
+        explanation=(
+            "This is valid C, but it uses a construct this project's own analyzer does "
+            "not model -- the subset it covers is listed in docs/scope.md, and struct, "
+            "union, switch, do/while, typedef and goto are deliberately outside it. "
+            "Nothing is wrong with your program because of this note. The file is still "
+            "checked by the system compiler, so real errors in it are still reported; "
+            "only our own extra checks skip this construct."
+        ),
+        fix="Nothing to fix. Rewrite it with if/while/for if you want our own analyzer to see inside.",
+    ),
+
+    # phase 3 -- semantic
+    Rule(
+        code="E_UNDECLARED_IDENTIFIER",
+        title="A name that was never declared",
+        explanation=(
+            "C insists that every variable and function is declared before it is used, "
+            "because the declaration is what gives the name a type. No declaration of "
+            "this name is visible at this point, so the compiler has nothing to work "
+            "with. The three usual causes, in order of how often they happen: the name "
+            "is spelled differently from the declaration; the declaration is missing "
+            "altogether; or the name was declared inside a different pair of braces -- "
+            "a loop body, an if-block -- and stopped existing at the closing brace."
+        ),
+        fix="Correct the spelling, or declare the name before this line and outside any inner block.",
+    ),
+    Rule(
+        code="E_REDECLARATION",
+        title="This name is declared twice",
+        explanation=(
+            "Two declarations of the same name in the same scope leave the compiler with "
+            "no way to decide which one a use of the name refers to, so it refuses both. "
+            "The note points at the first declaration. Declaring the same name in two "
+            "different blocks is legal and does not cause this; the two here are in the "
+            "same one."
+        ),
+        fix="Remove the second declaration, or rename one of the two variables.",
+    ),
+    Rule(
+        code="E_TYPE_MISMATCH",
+        title="The value's type does not fit",
+        explanation=(
+            "Every variable in C has a type that fixes what its bytes mean, and the "
+            "value here means something different. The common pair is a text literal "
+            "and a number: \\\"5\\\" is an address pointing at the characters '5' and a "
+            "terminator, while 5 is the quantity five. Neither converts to the other by "
+            "itself, so the compiler will not guess. The same applies to a pointer and "
+            "an int: one is a location, the other is a number."
+        ),
+        fix="Use a value of the variable's own type, or declare the variable with the type the value has.",
+    ),
+    Rule(
+        code="E_WRONG_ARG_COUNT",
+        title="The call passes the wrong number of arguments",
+        explanation=(
+            "A function's declaration fixes exactly how many arguments it takes. C has "
+            "no optional parameters and no default values, so a call with a different "
+            "number is an error rather than something filled in for you -- the function "
+            "would otherwise read a parameter that was never given a value. The note "
+            "points at the declaration that sets the count."
+        ),
+        fix="Pass one argument for each parameter in the declaration, in the same order.",
+    ),
+    Rule(
+        code="E_NOT_A_FUNCTION",
+        title="This name is not a function",
+        explanation=(
+            "Writing a name followed by '(' asks the compiler to call that name, but the "
+            "note shows it declared as a variable. Either the call was meant for a "
+            "different name, or the parentheses are accidental -- in C they mean 'call "
+            "this', not 'group this', when they follow a name directly."
+        ),
+        fix="Call the function you meant, or remove the parentheses after the variable.",
+    ),
+    Rule(
+        code="E_VOID_VARIABLE",
+        title="A variable cannot have type void",
+        explanation=(
+            "'void' means 'no value at all'. It is useful as a return type, for a "
+            "function that computes nothing to hand back, but a variable has to hold "
+            "something, so there is no such thing as a void variable."
+        ),
+        fix="Give the variable the type of the value it is meant to hold, such as int or double.",
+    ),
+    Rule(
+        code="E_BREAK_OUTSIDE_LOOP",
+        title="'break' with no loop to break out of",
+        explanation=(
+            "'break' leaves the nearest enclosing loop, and 'continue' jumps to that "
+            "loop's next iteration. Written outside any loop there is nothing for them "
+            "to act on, so the compiler cannot give them a meaning. This usually means a "
+            "closing brace sits above the statement where it was meant to sit below it, "
+            "which has put the statement outside the loop body."
+        ),
+        fix="Move the statement inside the loop body, or check where the loop's '}' is.",
+    ),
+    Rule(
+        code="W_MISSING_RETURN",
+        title="A function that promises a value does not return one",
+        explanation=(
+            "This function's return type is not void, which is a promise to hand a value "
+            "back to whoever calls it. There is a path through the function that reaches "
+            "the closing brace without a 'return', and on that path the caller receives "
+            "whatever happened to be left in the place a return value is passed -- a "
+            "different number on different runs. The note points at the function's "
+            "declaration, where the promised type is written."
+        ),
+        fix="End every path with 'return' and a value, including the fall-through at the closing brace.",
+    ),
+    Rule(
+        code="W_UNINITIALIZED_READ",
+        title="A variable is read before it is set",
+        explanation=(
+            "Declaring a local variable in C reserves space for it and nothing more: it "
+            "does not start at zero. Until something is written to it, it holds whatever "
+            "bytes were already at that address, so reading it produces an unpredictable "
+            "value that can differ between runs, between machines, and between a debug "
+            "and a release build. That is why a program with this bug can appear to work "
+            "and then fail somewhere else entirely."
+        ),
+        fix="Give the variable a value where you declare it, for example 'int n = 0;'.",
+    ),
+
+    # -- the system compiler, as ground truth ------------------------------
     Rule(
         code="clang:expected_semicolon_at_end_of_declaration",
         pattern=r"expected ';'",
@@ -314,7 +595,17 @@ RULES: tuple[Rule, ...] = (
 )
 
 def explain(diag: Diagnostic) -> Diagnostic:
-    """Attach an explanation to one diagnostic, in place, and return it."""
+    """Attach an explanation to one diagnostic, in place, and return it.
+
+    Idempotent, and it has to be: quality findings arrive from
+    nlpcc/quality/rules.py already carrying their own explanation, and the
+    pipeline runs this pass over every diagnostic regardless of source.
+    Without the early return, no rule here matches a quality code and the
+    finding gets stamped "none" -- marking an explained finding unexplained.
+    """
+    if diag.explanation:
+        return diag
+
     for rule in RULES:
         if rule.matches(diag):
             diag.explanation = rule.explanation

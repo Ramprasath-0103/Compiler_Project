@@ -1,6 +1,21 @@
 {
   "title": "Five levels of nested if-statements",
   "run": true,
-  "expect": [],
-  "pending": "the corpus runner does not enable the quality pass; step 6 covers this case in tests/test_quality.py (R_DEEP_NESTING)"
+  "quality": true,
+  "expect": [
+    {
+      "line": 3,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "R_DEEP_NESTING",
+      "explained": true
+    },
+    {
+      "line": 3,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "R_OPAQUE_NAMES",
+      "explained": true
+    }
+  ]
 }

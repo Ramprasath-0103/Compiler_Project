@@ -11,9 +11,13 @@ are asserted:
 project is that nothing reaches the user as raw compiler jargon, so an
 unexplained finding is a failure even when the detection is correct.
 
-Cases marked "pending" describe behaviour a later step must deliver -- they
-are legal C that no compiler warns about, waiting on the quality rule engine.
-They xfail rather than silently pass.
+A case sets ``"quality": true`` when its problem is one no compiler reports --
+deep nesting, an unchecked allocation, opaque naming. That runs the step-6
+rule engine for that case, which is what makes the quality analyzer's claim
+("it finds what a compiler cannot") a test rather than an assertion.
+
+Cases marked "pending" describe behaviour a later step must deliver. They
+xfail rather than silently pass.
 """
 
 from __future__ import annotations
@@ -66,7 +70,8 @@ def test_expected_findings_are_reported(source: Path) -> None:
     if case.get("pending"):
         pytest.xfail(case["pending"])
 
-    result = pipeline.analyze(source, run=case.get("run", False))
+    result = pipeline.analyze(source, run=case.get("run", False),
+                              quality=case.get("quality", False))
     got = result.diagnostics
 
     for want in case["expect"]:
@@ -81,7 +86,8 @@ def test_expected_findings_are_reported(source: Path) -> None:
 def test_every_finding_is_explained(source: Path) -> None:
     """No raw compiler jargon reaches the user. This is the project's premise."""
     case = _load(source)
-    result = pipeline.analyze(source, run=case.get("run", False))
+    result = pipeline.analyze(source, run=case.get("run", False),
+                              quality=case.get("quality", False))
 
     gaps = rules.unexplained(result.diagnostics)
     assert not gaps, (
@@ -93,7 +99,7 @@ def test_every_finding_is_explained(source: Path) -> None:
 def test_clean_program_reports_nothing() -> None:
     """Guard against a rule engine that cries wolf on correct code."""
     clean = CORPUS / "clean.c"
-    result = pipeline.analyze(clean, run=True)
+    result = pipeline.analyze(clean, run=True, quality=True)
     assert result.ok, [str(d) for d in result.diagnostics]
     assert result.run and result.run.stdout.strip() == "7"
 

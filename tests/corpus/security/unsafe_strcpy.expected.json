@@ -1,12 +1,13 @@
 {
   "title": "strcpy into a buffer smaller than the source",
   "run": true,
+  "quality": true,
   "expect": [
     {
-      "line": null,
+      "line": 4,
       "severity": "error",
-      "phase": "runtime",
-      "code": "R_FORTIFY_ABORT",
+      "phase": "quality",
+      "code": "S_UNSAFE_FUNCTION",
       "explained": true
     }
   ]

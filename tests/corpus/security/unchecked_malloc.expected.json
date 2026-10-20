@@ -1,6 +1,21 @@
 {
   "title": "malloc result used without a NULL check",
   "run": true,
-  "expect": [],
-  "pending": "the corpus runner does not enable the quality pass; step 6 covers this case in tests/test_quality.py (S_UNCHECKED_ALLOCATION, S_LEAKED_ALLOCATION)"
+  "quality": true,
+  "expect": [
+    {
+      "line": 4,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "S_LEAKED_ALLOCATION",
+      "explained": true
+    },
+    {
+      "line": 4,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "S_UNCHECKED_ALLOCATION",
+      "explained": true
+    }
+  ]
 }
