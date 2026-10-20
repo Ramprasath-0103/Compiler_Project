@@ -1,0 +1,6 @@
+{
+  "title": "Five levels of nested if-statements",
+  "run": true,
+  "expect": [],
+  "pending": "step 6: nesting depth is a maintainability metric, not a compiler diagnostic"
+}

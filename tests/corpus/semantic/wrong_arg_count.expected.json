@@ -1,0 +1,13 @@
+{
+  "title": "A two-parameter function called with one argument",
+  "run": true,
+  "expect": [
+    {
+      "line": 8,
+      "severity": "error",
+      "phase": "semantic",
+      "code": "clang:too_few_arguments_to_function_call_expected_2_ha",
+      "explained": true
+    }
+  ]
+}

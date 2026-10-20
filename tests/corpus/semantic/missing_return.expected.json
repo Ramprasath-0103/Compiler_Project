@@ -1,0 +1,27 @@
+{
+  "title": "A non-void function that falls off its end",
+  "run": true,
+  "expect": [
+    {
+      "line": null,
+      "severity": "warning",
+      "phase": "runtime",
+      "code": "R_NONZERO_EXIT",
+      "explained": true
+    },
+    {
+      "line": 2,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "-Wunused-variable",
+      "explained": true
+    },
+    {
+      "line": 3,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "-Wreturn-type",
+      "explained": true
+    }
+  ]
+}

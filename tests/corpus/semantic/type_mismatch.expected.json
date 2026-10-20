@@ -1,0 +1,13 @@
+{
+  "title": "A string literal assigned to a float",
+  "run": true,
+  "expect": [
+    {
+      "line": 4,
+      "severity": "error",
+      "phase": "semantic",
+      "code": "clang:initializing_with_an_expression_of_incompatible_",
+      "explained": true
+    }
+  ]
+}

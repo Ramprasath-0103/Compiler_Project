@@ -1,0 +1,6 @@
+{
+  "title": "Single-letter names throughout",
+  "run": true,
+  "expect": [],
+  "pending": "step 6: naming conformance is a readability metric, not a compiler diagnostic"
+}

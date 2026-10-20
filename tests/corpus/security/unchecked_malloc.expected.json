@@ -1,0 +1,6 @@
+{
+  "title": "malloc result used without a NULL check",
+  "run": true,
+  "expect": [],
+  "pending": "step 6: the quality/security rule engine must flag this; it is legal C and no compiler warns"
+}

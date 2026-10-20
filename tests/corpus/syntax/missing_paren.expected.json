@@ -1,0 +1,13 @@
+{
+  "title": "An if-condition whose parenthesis never closes",
+  "run": true,
+  "expect": [
+    {
+      "line": 5,
+      "severity": "error",
+      "phase": "syntax",
+      "code": "clang:expected_rparen",
+      "explained": true
+    }
+  ]
+}

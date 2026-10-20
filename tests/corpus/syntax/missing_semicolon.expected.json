@@ -1,0 +1,13 @@
+{
+  "title": "A declaration with no terminating semicolon",
+  "run": true,
+  "expect": [
+    {
+      "line": 4,
+      "severity": "error",
+      "phase": "syntax",
+      "code": "clang:expected_semicolon_at_end_of_declaration",
+      "explained": true
+    }
+  ]
+}

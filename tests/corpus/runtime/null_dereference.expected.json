@@ -1,0 +1,20 @@
+{
+  "title": "A write through a NULL pointer",
+  "run": true,
+  "expect": [
+    {
+      "line": null,
+      "severity": "error",
+      "phase": "runtime",
+      "code": "R_ABORT",
+      "explained": true
+    },
+    {
+      "line": 5,
+      "severity": "error",
+      "phase": "runtime",
+      "code": "R_NULL_DEREFERENCE",
+      "explained": true
+    }
+  ]
+}

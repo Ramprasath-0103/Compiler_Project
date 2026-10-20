@@ -1,0 +1,20 @@
+{
+  "title": "A loop-local variable used after the loop",
+  "run": true,
+  "expect": [
+    {
+      "line": 5,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "-Wunused-variable",
+      "explained": true
+    },
+    {
+      "line": 7,
+      "severity": "error",
+      "phase": "semantic",
+      "code": "clang:use_of_undeclared_identifier",
+      "explained": true
+    }
+  ]
+}

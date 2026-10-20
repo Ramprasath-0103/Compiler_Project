@@ -1,0 +1,20 @@
+{
+  "title": "A loop writing far past the end of an array",
+  "run": true,
+  "expect": [
+    {
+      "line": null,
+      "severity": "warning",
+      "phase": "runtime",
+      "code": "R_NONZERO_EXIT",
+      "explained": true
+    },
+    {
+      "line": 6,
+      "severity": "error",
+      "phase": "runtime",
+      "code": "R_INDEX_OUT_OF_BOUNDS",
+      "explained": true
+    }
+  ]
+}

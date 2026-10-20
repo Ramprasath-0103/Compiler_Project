@@ -1,0 +1,13 @@
+{
+  "title": "A misspelled variable name, never declared",
+  "run": true,
+  "expect": [
+    {
+      "line": 5,
+      "severity": "error",
+      "phase": "semantic",
+      "code": "clang:use_of_undeclared_identifier_did_you_mean",
+      "explained": true
+    }
+  ]
+}

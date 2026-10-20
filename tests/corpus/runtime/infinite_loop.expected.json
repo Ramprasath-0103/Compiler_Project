@@ -1,0 +1,13 @@
+{
+  "title": "A loop whose condition variable never changes",
+  "run": true,
+  "expect": [
+    {
+      "line": null,
+      "severity": "error",
+      "phase": "runtime",
+      "code": "R_TIMEOUT",
+      "explained": true
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "title": "An if-block whose closing brace is missing",
+  "run": true,
+  "expect": [
+    {
+      "line": 7,
+      "severity": "error",
+      "phase": "syntax",
+      "code": "clang:expected_rbrace",
+      "explained": true
+    }
+  ]
+}

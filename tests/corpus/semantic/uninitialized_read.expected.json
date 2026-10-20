@@ -1,0 +1,13 @@
+{
+  "title": "A local read before it is assigned",
+  "run": true,
+  "expect": [
+    {
+      "line": 5,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "-Wuninitialized",
+      "explained": true
+    }
+  ]
+}

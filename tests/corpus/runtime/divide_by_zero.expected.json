@@ -1,0 +1,13 @@
+{
+  "title": "Integer division by a variable holding zero",
+  "run": true,
+  "expect": [
+    {
+      "line": 6,
+      "severity": "error",
+      "phase": "runtime",
+      "code": "R_DIVISION_BY_ZERO",
+      "explained": true
+    }
+  ]
+}

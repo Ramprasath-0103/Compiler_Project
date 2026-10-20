@@ -1,0 +1,13 @@
+{
+  "title": "A double printed with the %d conversion",
+  "run": true,
+  "expect": [
+    {
+      "line": 5,
+      "severity": "warning",
+      "phase": "quality",
+      "code": "-Wformat",
+      "explained": true
+    }
+  ]
+}

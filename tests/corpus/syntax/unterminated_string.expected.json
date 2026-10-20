@@ -1,0 +1,27 @@
+{
+  "title": "A string literal with no closing quote",
+  "run": true,
+  "expect": [
+    {
+      "line": 4,
+      "severity": "error",
+      "phase": "syntax",
+      "code": "clang:expected_expression",
+      "explained": true
+    },
+    {
+      "line": 4,
+      "severity": "warning",
+      "phase": "lexical",
+      "code": "-Winvalid-pp-token",
+      "explained": true
+    },
+    {
+      "line": 6,
+      "severity": "error",
+      "phase": "syntax",
+      "code": "clang:expected_rbrace",
+      "explained": true
+    }
+  ]
+}
