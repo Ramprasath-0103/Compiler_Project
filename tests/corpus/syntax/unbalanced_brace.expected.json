@@ -6,7 +6,7 @@
       "line": 7,
       "severity": "error",
       "phase": "syntax",
-      "code": "clang:expected_rbrace",
+      "code": "E_MISSING_BRACE",
       "explained": true
     }
   ]

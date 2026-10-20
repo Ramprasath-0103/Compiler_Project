@@ -13,7 +13,7 @@
       "line": 7,
       "severity": "error",
       "phase": "semantic",
-      "code": "clang:use_of_undeclared_identifier",
+      "code": "E_UNDECLARED_IDENTIFIER",
       "explained": true
     }
   ]

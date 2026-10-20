@@ -5,8 +5,8 @@
     {
       "line": 5,
       "severity": "warning",
-      "phase": "quality",
-      "code": "-Wuninitialized",
+      "phase": "semantic",
+      "code": "W_UNINITIALIZED_READ",
       "explained": true
     }
   ]

@@ -3,13 +3,6 @@
   "run": true,
   "expect": [
     {
-      "line": null,
-      "severity": "warning",
-      "phase": "runtime",
-      "code": "R_NONZERO_EXIT",
-      "explained": true
-    },
-    {
       "line": 2,
       "severity": "warning",
       "phase": "quality",
@@ -19,8 +12,15 @@
     {
       "line": 3,
       "severity": "warning",
-      "phase": "quality",
-      "code": "-Wreturn-type",
+      "phase": "semantic",
+      "code": "W_MISSING_RETURN",
+      "explained": true
+    },
+    {
+      "line": null,
+      "severity": "warning",
+      "phase": "runtime",
+      "code": "R_NONZERO_EXIT",
       "explained": true
     }
   ]

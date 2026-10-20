@@ -6,7 +6,7 @@
       "line": 8,
       "severity": "error",
       "phase": "semantic",
-      "code": "clang:too_few_arguments_to_function_call_expected_2_ha",
+      "code": "E_WRONG_ARG_COUNT",
       "explained": true
     }
   ]

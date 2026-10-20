@@ -6,7 +6,7 @@
       "line": 4,
       "severity": "error",
       "phase": "semantic",
-      "code": "clang:initializing_with_an_expression_of_incompatible_",
+      "code": "E_TYPE_MISMATCH",
       "explained": true
     }
   ]

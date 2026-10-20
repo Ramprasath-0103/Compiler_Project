@@ -2,7 +2,14 @@
 
 Order matters. Our own front end runs first so its findings own the report;
 clang runs second as ground truth; the executor runs only if it compiled.
-Dedup keeps clang quiet about anything we already said ourselves.
+
+Our front end and clang describe the same mistakes in different words, so
+without suppression every error is reported twice -- one missing semicolon
+produced both E_MISSING_SEMICOLON and clang:expected_semicolon_at_end_of_
+declaration, at the same line, and the report read as two problems. Clang's
+copy is dropped where ours already covers that line (see ``_supersedes``);
+the dropped findings are kept on the Analysis so nothing vanishes silently
+and a gap in our analyzer is still measurable.
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ class Analysis:
     frontend_available: bool = False
     score: "quality_score.Score | None" = None
     file_metrics: "quality_metrics.FileMetrics | None" = None
+    superseded: list[Diagnostic] = field(default_factory=list)
 
     @property
     def errors(self) -> list[Diagnostic]:
@@ -36,6 +44,27 @@ class Analysis:
     @property
     def ok(self) -> bool:
         return not self.errors
+
+
+def _supersedes(own: list[Diagnostic], other: Diagnostic) -> bool:
+    """Does our own front end already account for this clang finding?
+
+    True when we reported at the same line and either we called it an error --
+    in which case clang's findings there are the same mistake and the cascade
+    after it -- or we reported at the same severity. A clang finding at a line
+    we said nothing about is a real gap and always kept.
+    """
+    if other.position is None:
+        return False
+    line = other.position.line
+    for mine in own:
+        if mine.position is None or mine.position.line != line:
+            continue
+        if mine.severity in (Severity.ERROR, Severity.FATAL):
+            return True
+        if mine.severity is other.severity:
+            return True
+    return False
 
 
 def _run_own_frontend(source: Path) -> tuple[list[Diagnostic], bool]:
@@ -69,9 +98,13 @@ def analyze(source: Path, run: bool = False, stdin: str = "",
 
     seen = {d.key for d in own}
     for diag in clang_runner.analyze(source):
-        if diag.key not in seen:
-            result.diagnostics.append(diag)
-            seen.add(diag.key)
+        if diag.key in seen:
+            continue
+        if _supersedes(own, diag):
+            result.superseded.append(diag)
+            continue
+        result.diagnostics.append(diag)
+        seen.add(diag.key)
 
     if quality and not result.errors:
         result.file_metrics = quality_metrics.measure(source)

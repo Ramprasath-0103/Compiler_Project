@@ -5,15 +5,15 @@
     {
       "line": 4,
       "severity": "error",
-      "phase": "syntax",
-      "code": "clang:expected_expression",
+      "phase": "lexical",
+      "code": "E_UNTERMINATED_STRING",
       "explained": true
     },
     {
-      "line": 4,
-      "severity": "warning",
-      "phase": "lexical",
-      "code": "-Winvalid-pp-token",
+      "line": 5,
+      "severity": "error",
+      "phase": "syntax",
+      "code": "E_MISSING_PAREN",
       "explained": true
     },
     {

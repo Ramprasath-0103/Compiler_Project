@@ -6,7 +6,7 @@
       "line": 5,
       "severity": "error",
       "phase": "semantic",
-      "code": "clang:use_of_undeclared_identifier_did_you_mean",
+      "code": "E_UNDECLARED_IDENTIFIER",
       "explained": true
     }
   ]
