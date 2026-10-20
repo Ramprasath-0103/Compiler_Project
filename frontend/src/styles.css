@@ -461,10 +461,13 @@ button.tab:disabled { opacity: 0.35; }
 .phaseflow {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;        /* wrapping left an arrow dangling at the line end */
   gap: 8px;
   margin: 14px 0 22px;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
+.phasestep:last-child .arrow { display: none; }
 .phasestep { display: flex; align-items: center; gap: 8px; }
 .phasechip {
   border: 1px solid var(--line);

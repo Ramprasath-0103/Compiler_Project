@@ -89,18 +89,22 @@ export default function App() {
 
   async function inspectPipeline() {
     const data = await post("/api/inspect", { code }, "pipeline");
-    if (data) {
-      setPipeline(data);
-      setTab("pipeline");
-    }
+    if (data) setPipeline(data);
   }
 
   async function improveCode() {
     const data = await post("/api/improve", { code, objectives }, "improve");
-    if (data) {
-      setImprovement(data);
-      setTab("improved");
-    }
+    if (data) setImprovement(data);
+  }
+
+  // Clicking a tab is how you get to a view. It used to only switch to data
+  // that some other button had already fetched, so the obvious action --
+  // clicking the tab named after the thing you want -- did nothing at all.
+  function openTab(key) {
+    setTab(key);
+    if (busy || !code.trim()) return;
+    if (key === "pipeline" && !pipeline) inspectPipeline();
+    if (key === "improved" && !improvement) improveCode();
   }
 
   // Plain English in, the right stage of the pipeline out. The intent is
@@ -221,7 +225,12 @@ export default function App() {
             ref={editor}
             value={code}
             spellCheck="false"
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setCode(e.target.value);
+              // These describe the old text once it is edited.
+              setPipeline(null);
+              setImprovement(null);
+            }}
           />
           <p className="hint">
             {code.split("\n").length} lines · click any finding to jump to its line
@@ -260,22 +269,6 @@ export default function App() {
             {busy && busyWith === "analyze" ? "Analyzing..." : "Analyze"}
           </button>
 
-          <div className="button-row">
-            <button
-              className="ghost"
-              onClick={improveCode}
-              disabled={busy || !code.trim()}
-            >
-              {busy && busyWith === "improve" ? "Improving..." : "Improve it"}
-            </button>
-            <button
-              className="ghost"
-              onClick={inspectPipeline}
-              disabled={busy || !code.trim()}
-            >
-              {busy && busyWith === "pipeline" ? "Reading..." : "Show the phases"}
-            </button>
-          </div>
 
           {busy && (
             <p className="muted">
@@ -290,15 +283,15 @@ export default function App() {
         <section className="panel results">
           <nav className="tabs">
             {[
-              ["report", "Report", report || generated || intent],
-              ["pipeline", "Compiler phases", pipeline],
-              ["improved", "Improved version", improvement],
-            ].map(([key, title, enabled]) => (
+              ["report", "Report"],
+              ["pipeline", "Compiler phases"],
+              ["improved", "Improved version"],
+            ].map(([key, title]) => (
               <button
                 key={key}
                 className={tab === key ? "tab on" : "tab"}
-                disabled={!enabled}
-                onClick={() => setTab(key)}
+                disabled={busy || !code.trim()}
+                onClick={() => openTab(key)}
               >
                 {title}
               </button>
@@ -323,7 +316,14 @@ export default function App() {
           )}
 
           {tab === "pipeline" &&
-            (pipeline ? <Pipeline data={pipeline} onJump={jumpToLine} /> : <Empty />)}
+            (pipeline ? (
+              <Pipeline data={pipeline} onJump={jumpToLine} />
+            ) : (
+              <Waiting
+                busy={busy && busyWith === "pipeline"}
+                what="Reading the tokens, the parse tree and the symbol table."
+              />
+            ))}
 
           {tab === "improved" &&
             (improvement ? (
@@ -331,11 +331,16 @@ export default function App() {
                 improvement={improvement}
                 onUse={(c) => {
                   setCode(c);
+                  setImprovement(null);
                   setTab("report");
                 }}
               />
             ) : (
-              <Empty />
+              <Waiting
+                busy={busy && busyWith === "improve"}
+                what="Rewriting it, then checking the rewrite still compiles and
+                      scores no worse. This needs a model, so it can take a minute."
+              />
             ))}
         </section>
       </div>
@@ -690,6 +695,21 @@ function Improved({ improvement, onUse }) {
         </button>
       )}
     </>
+  );
+}
+
+function Waiting({ busy, what }) {
+  return (
+    <div className="empty">
+      {busy ? (
+        <>
+          <p>Working…</p>
+          <p className="muted">{what}</p>
+        </>
+      ) : (
+        <p className="muted">Nothing to show yet.</p>
+      )}
+    </div>
   );
 }
 
