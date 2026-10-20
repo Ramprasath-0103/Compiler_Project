@@ -89,12 +89,31 @@ def test_generation_without_a_model_fails_honestly() -> None:
 
 
 def test_rejected_program_is_not_presented_as_working() -> None:
-    """An attempt that still has errors is returned unaccepted."""
+    """An attempt the compiler rejects is returned unaccepted."""
+    from nlpcc.diagnostics import Origin
+
     attempt = generate.Attempt(
         code="int main(void){",
         diagnostics=[Diagnostic(phase=Phase.SYNTAX, severity=Severity.ERROR,
-                                message="expected '}'", code="clang:expected_rbrace")])
+                                message="expected '}'", code="clang:expected_rbrace",
+                                origin=Origin.CLANG)])
     assert attempt.errors
+
+
+def test_generated_code_is_judged_by_the_compiler_not_our_subset() -> None:
+    """Our front end models a subset, so its errors are not build failures.
+
+    Judging generated code by the subset rejected correct programs for using
+    size_t -- valid C that clang compiles without a word.
+    """
+    from nlpcc.diagnostics import Origin
+
+    attempt = generate.Attempt(
+        code="int main(void){ size_t n = 0; return (int)n; }",
+        diagnostics=[Diagnostic(phase=Phase.SYNTAX, severity=Severity.ERROR,
+                                message="expected ';'", code="E_MISSING_SEMICOLON",
+                                origin=Origin.FRONTEND)])
+    assert attempt.errors == []
 
 
 # --- recovering a program from a model's reply --------------------------------

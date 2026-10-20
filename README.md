@@ -61,18 +61,35 @@ objectives out of the sentence.
 ```
 
 The model-backed parts — explaining unmatched diagnostics, AI code analysis,
-and code generation — use whatever is available, **local first**:
+and code generation — use whatever is available:
 
-1. **LM Studio** — load a model and run `lms server start`. No API key.
-2. **Ollama** — just run it. No API key.
-3. **Anthropic** — used only if credentials happen to exist.
+1. **Gemini** — `export GEMINI_API_KEY=...` (free key from
+   [AI Studio](https://aistudio.google.com/apikey)).
+2. **Anthropic** — used if its credentials resolve.
+3. **LM Studio** — load a model and run `lms server start`. No API key.
+4. **Ollama** — just run it. No API key.
 
-Everything else works with no model at all. The compiler, the explanations,
-the five dimensions, the score and the suggestions are all deterministic.
+Pin one with `NLPCC_PROVIDER=gemini` (or `lmstudio`, `ollama`, `anthropic`).
 
-A small local model is noticeably rougher than a hosted one, and slower. That
-is a real trade, so the provider that produced a given answer is reported
-alongside it rather than left to guess.
+The order is about quality, not availability. **Everything outside these three
+features works with no model at all** — the compiler, the explanations, the
+five dimensions, the score and the suggestions are all deterministic. The
+local providers are the fallback that always works; a small local model is
+rougher and slower, which is why the provider that produced a given answer is
+reported alongside it.
+
+Measured on `generate`, same prompt, five runs each: a local 0.8B model
+produced three compiling programs out of five; Gemini produced five.
+
+Gemini's free tier meters each model separately, so a quota refusal on one
+falls back to the other rather than failing.
+
+**Never commit the key.** Keep it in your shell, not in a file the repo
+tracks:
+
+```bash
+export GEMINI_API_KEY=...        # in your shell profile, not in git
+```
 
 ## The web interface
 

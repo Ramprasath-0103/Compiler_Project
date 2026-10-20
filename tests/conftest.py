@@ -19,5 +19,5 @@ def no_live_model(monkeypatch):
     a local server was running, and would have given different answers on a
     different machine. A test that needs the AI path injects a fake.
     """
-    for probe in ("_lmstudio", "_ollama", "_anthropic"):
+    for probe in ("_gemini", "_anthropic", "_lmstudio", "_ollama"):
         monkeypatch.setattr(models, probe, lambda: None)

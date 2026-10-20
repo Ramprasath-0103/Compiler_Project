@@ -41,9 +41,16 @@ class Attempt:
 
     @property
     def errors(self) -> list[Diagnostic]:
-        from .diagnostics import Severity
+        """Compiler errors only -- the question here is "does this build?".
+
+        Our own front end models a subset of C, so it reports errors on
+        valid programs that use anything outside it. Judging generated code
+        by the subset would reject correct programs for using size_t.
+        """
+        from .diagnostics import Origin, Severity
         return [d for d in self.diagnostics
-                if d.severity in (Severity.ERROR, Severity.FATAL)]
+                if d.severity in (Severity.ERROR, Severity.FATAL)
+                and d.origin in (Origin.CLANG, Origin.EXECUTOR)]
 
 
 @dataclass

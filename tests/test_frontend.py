@@ -361,3 +361,47 @@ def test_expected_json_exists_for_every_case() -> None:
     assert not missing, missing
     for case in CASES:                       # and each one parses
         json.loads(case.with_suffix(".expected.json").read_text())
+
+
+# -- 4. the subset is a limit on us, not an error in the user's code ----------
+
+def test_valid_c_outside_the_subset_is_a_note_not_an_error(tmp_path) -> None:
+    """If clang compiles it, our errors are subset limits and must not say error.
+
+    `for (size_t i = 0; ...)` made our parser emit six cascading errors on a
+    program clang accepted silently: the subset has no typedefs and the
+    for-init clause had no path for an unknown type name. Telling a user their
+    working program is broken is worse than saying we could not model it.
+    """
+    from nlpcc import pipeline
+    from nlpcc.diagnostics import Severity
+
+    source = tmp_path / "subset.c"
+    source.write_text(
+        "#include <stdio.h>\n"
+        "int main(void) {\n"
+        "    for (size_t i = 0; i < 3; i++) { printf(\"%zu\", i); }\n"
+        "    return 0;\n"
+        "}\n")
+
+    result = pipeline.analyze(source)
+    assert result.subset_limited
+    assert not [d for d in result.diagnostics
+                if d.severity in (Severity.ERROR, Severity.FATAL)]
+    notes = [d for d in result.diagnostics if d.code == "W_OUTSIDE_SUBSET"]
+    assert len(notes) == 1
+    assert notes[0].meta["demoted_from"]        # records what was suppressed
+
+
+def test_real_errors_are_not_demoted(tmp_path) -> None:
+    """The demotion only applies when clang found nothing wrong."""
+    from nlpcc import pipeline
+    from nlpcc.diagnostics import Severity
+
+    source = tmp_path / "broken.c"
+    source.write_text("int main(void) {\n    int x = 1\n    return 0;\n}\n")
+
+    result = pipeline.analyze(source)
+    assert not result.subset_limited
+    assert [d for d in result.diagnostics
+            if d.severity in (Severity.ERROR, Severity.FATAL)]

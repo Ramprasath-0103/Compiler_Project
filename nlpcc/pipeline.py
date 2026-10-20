@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backends import clang_runner, executor
-from .diagnostics import Diagnostic, Severity, sort_diagnostics
+from .diagnostics import Diagnostic, Origin, Severity, sort_diagnostics
 from .explain import rules
 from .frontend import lexer, parser, semantic
 from .quality import ai as quality_ai
@@ -36,6 +36,7 @@ class Analysis:
     score: "quality_score.Score | None" = None
     file_metrics: "quality_metrics.FileMetrics | None" = None
     superseded: list[Diagnostic] = field(default_factory=list)
+    subset_limited: bool = False     # our front end could not model this file
 
     @property
     def errors(self) -> list[Diagnostic]:
@@ -45,6 +46,48 @@ class Analysis:
     @property
     def ok(self) -> bool:
         return not self.errors
+
+
+def _demote_subset_artifacts(own: list[Diagnostic],
+                             clang_findings: list[Diagnostic]) -> tuple[list[Diagnostic], bool]:
+    """If clang compiled it, our errors are subset limits, not errors.
+
+    Our front end models a subset of C; clang models all of it. So when our
+    analyzer reports errors on a file clang compiles without any, the program
+    is valid C that uses something we do not cover -- and saying "error" about
+    it is simply wrong.
+
+    This came from real output: `for (size_t i = 0; ...)` made our parser emit
+    six cascading errors on a program clang accepted silently, because the
+    subset has no typedefs and the for-init clause had no path for an unknown
+    type name. Patching that one clause would leave every other gap to be
+    found the same way, by a user being told their working code is broken.
+
+    Declaring clang the ground truth means acting on it: the errors become one
+    note saying which construct we could not model, and the file is clang's.
+    """
+    clang_errors = [d for d in clang_findings
+                    if d.severity in (Severity.ERROR, Severity.FATAL)]
+    own_errors = [d for d in own if d.severity in (Severity.ERROR, Severity.FATAL)]
+    if clang_errors or not own_errors:
+        return own, False
+
+    kept = [d for d in own if d.severity not in (Severity.ERROR, Severity.FATAL)]
+    if not any(d.code == "W_OUTSIDE_SUBSET" for d in kept):
+        first = own_errors[0]
+        kept.append(Diagnostic(
+            phase=first.phase,
+            severity=Severity.NOTE,
+            message="this file uses C our analyzer does not model, so the system "
+                    "compiler's findings are the ones that apply here",
+            file=first.file,
+            position=first.position,
+            code="W_OUTSIDE_SUBSET",
+            origin=Origin.FRONTEND,
+            snippet=first.snippet,
+            meta={"demoted_from": sorted({d.code for d in own_errors})},
+        ))
+    return kept, True
 
 
 def _supersedes(own: list[Diagnostic], other: Diagnostic) -> bool:
@@ -98,10 +141,14 @@ def analyze(source: Path, run: bool = False, stdin: str = "",
 
     own, available = _run_own_frontend(source)
     result.frontend_available = available
+
+    clang_findings = clang_runner.analyze(source)
+    own, demoted = _demote_subset_artifacts(own, clang_findings)
+    result.subset_limited = demoted
     result.diagnostics.extend(own)
 
     seen = {d.key for d in own}
-    for diag in clang_runner.analyze(source):
+    for diag in clang_findings:
         if diag.key in seen:
             continue
         if _supersedes(own, diag):
