@@ -48,9 +48,11 @@ def test_a_provider_can_be_pinned(monkeypatch) -> None:
 def test_gemini_needs_a_key(monkeypatch) -> None:
     import importlib
 
+    # Reload first: importing the module reads .env, which would put a real
+    # key back into the environment after we cleared it.
+    real = importlib.reload(models)._gemini
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    real = importlib.reload(models)._gemini
     assert real() is None
 
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-used")
@@ -62,6 +64,15 @@ def test_describe_explains_what_to_do_when_there_is_no_model() -> None:
     """The conftest fixture already simulates having no model installed."""
     message = models.describe()
     assert "GEMINI_API_KEY" in message or "lms server start" in message
+
+
+def test_env_file_does_not_override_the_environment(monkeypatch) -> None:
+    """A key already exported wins over one in .env."""
+    import importlib
+
+    monkeypatch.setenv("GEMINI_API_KEY", "from-the-shell")
+    importlib.reload(models)
+    assert models._gemini_key() == "from-the-shell"
 
 
 def test_a_keyless_anthropic_client_is_not_a_provider(monkeypatch) -> None:

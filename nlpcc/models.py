@@ -30,7 +30,32 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Type, TypeVar
+
+def _load_env_file() -> None:
+    """Read KEY=value lines from a .env beside the project, if there is one.
+
+    So a key set once keeps working after a restart without anyone having to
+    remember to export it. Values already in the environment win, and .env is
+    in .gitignore -- a key belongs on the machine, never in the repository.
+    """
+    path = Path(__file__).resolve().parent.parent / ".env"
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        name, value = name.strip(), value.strip().strip("'\"")
+        if name and name not in os.environ:
+            os.environ[name] = value
+
+
+_load_env_file()
 
 LMSTUDIO_URL = os.environ.get("NLPCC_LOCAL_URL", "http://127.0.0.1:1234/v1")
 OLLAMA_URL = os.environ.get("NLPCC_OLLAMA_URL", "http://127.0.0.1:11434")
@@ -301,9 +326,10 @@ def _gemini_chat(provider: Provider, system: str, prompt: str,
             if code in (503, 429) and attempt < 2:
                 time.sleep(2 + 2 * attempt)        # transient, back off
                 continue
-            # The free tier meters each model separately, so a quota refusal
-            # on one is not a refusal on all of them. Switching beats failing.
-            if code == 429 and not switched and model != GEMINI_FALLBACK_MODEL:
+            # Quota (429) is metered per model and overload (503) is per
+            # model too, so a refusal from one is not a refusal from all of
+            # them. Switching beats failing the user's request.
+            if code in (429, 503) and not switched and model != GEMINI_FALLBACK_MODEL:
                 model, switched = GEMINI_FALLBACK_MODEL, True
                 continue
             # Say which failure it was. Reporting a quota refusal as "returned
