@@ -2,5 +2,5 @@
   "title": "Five levels of nested if-statements",
   "run": true,
   "expect": [],
-  "pending": "step 6: nesting depth is a maintainability metric, not a compiler diagnostic"
+  "pending": "the corpus runner does not enable the quality pass; step 6 covers this case in tests/test_quality.py (R_DEEP_NESTING)"
 }

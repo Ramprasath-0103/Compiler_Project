@@ -1,0 +1,223 @@
+"""Step 5b: the model explains what the rules could not.
+
+This layer sits BEHIND nlpcc/explain/rules.py and never in front of it. The
+ordering is the whole design:
+
+  * A rule-matched finding never reaches the model, so the common cases are
+    instant, free, identical between runs, and reviewable by a human.
+  * Only findings no rule covered are sent, and whatever comes back is
+    labelled ``explained_by: "llm"`` so the report can mark it as generated
+    rather than authored.
+  * Every answer is cached on disk by diagnostic code, so the second run of
+    the same program costs nothing and works with the network unplugged.
+  * Nothing here can fail the pipeline. No API key, no package installed, no
+    network, a rate limit, a malformed reply -- each leaves the diagnostic
+    exactly as it arrived, and the CLI goes on reporting it without an
+    explanation.
+
+Each answer the model gives is a candidate for promotion: an explanation that
+turns out to be right belongs in rules.py as a permanent rule, which is how
+the deterministic layer grows.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+from ..diagnostics import Diagnostic
+
+MODEL = "claude-opus-5-5"
+CACHE_DIR = Path(".nlpcc-cache") / "explanations"
+
+SYSTEM_PROMPT = """You explain C compiler diagnostics to someone in their first \
+year of programming.
+
+Rules for your explanations:
+- Say what the compiler was trying to do, why it could not, and what to type instead.
+- No jargon unless you define it in the same sentence.
+- Never restate the compiler's message in different words; explain the underlying
+  cause the message is pointing at.
+- The fix must be one concrete, actionable sentence.
+- Three to five sentences for the explanation. Do not pad it.
+- If the diagnostic is likely a knock-on effect of an earlier error, say so."""
+
+
+@dataclass
+class ModelExplanation:
+    title: str
+    explanation: str
+    fix: str
+
+    def to_dict(self) -> dict:
+        return {"title": self.title, "explanation": self.explanation, "fix": self.fix}
+
+
+@dataclass
+class Outcome:
+    """What happened, so the CLI can say why nothing came back."""
+
+    explained: int = 0
+    from_cache: int = 0
+    attempted: int = 0
+    unavailable_reason: str = ""
+
+    @property
+    def available(self) -> bool:
+        return not self.unavailable_reason
+
+
+def _cache_key(diag: Diagnostic) -> str:
+    # The code plus the shape of the message, with program-specific names
+    # stripped, so `undeclared identifier 'totl'` and `'xyz'` share an entry.
+    shape = re.sub(r"'[^']*'", "'X'", diag.message)
+    raw = f"{diag.code}|{shape}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def _read_cache(key: str, cache_dir: Path) -> ModelExplanation | None:
+    path = cache_dir / f"{key}.json"
+    try:
+        data = json.loads(path.read_text())
+        return ModelExplanation(data["title"], data["explanation"], data["fix"])
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _write_cache(key: str, explanation: ModelExplanation, cache_dir: Path) -> None:
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{key}.json").write_text(json.dumps(explanation.to_dict(), indent=2))
+    except OSError:
+        pass            # a cache that cannot be written is not an error
+
+
+def _client():
+    """The Anthropic client, or a reason we have none.
+
+    Credentials resolve from ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or an
+    `ant auth login` profile, so an unset API key does not by itself mean
+    there are no credentials -- we let the SDK decide and report what it says.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return None, "the 'anthropic' package is not installed (pip install anthropic)"
+    try:
+        return anthropic.Anthropic(), ""
+    except Exception as exc:                    # noqa: BLE001 - any construction failure
+        return None, f"no API credentials available ({exc.__class__.__name__})"
+
+
+def _ask(client, diag: Diagnostic, source_line: str) -> ModelExplanation | None:
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        title: str
+        explanation: str
+        fix: str
+
+    prompt = (
+        f"A C compiler reported this diagnostic.\n\n"
+        f"Severity: {diag.severity.value}\n"
+        f"Phase: {diag.phase.value}\n"
+        f"Message: {diag.message}\n"
+        f"Diagnostic code: {diag.code or '(none)'}\n"
+    )
+    if source_line:
+        prompt += f"\nThe line it points at:\n\n    {source_line.strip()}\n"
+    related = diag.meta.get("related") or []
+    if related:
+        prompt += "\nThe compiler also noted:\n"
+        for item in related:
+            prompt += f"  line {item['line']}: {item['message']}\n"
+    prompt += ("\nWrite a title of four or five words, the explanation, and the fix.")
+
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=2048,
+            system=SYSTEM_PROMPT,
+            output_config={"effort": "low"},     # a short, bounded explanation task
+            messages=[{"role": "user", "content": prompt}],
+            output_format=Schema,
+        )
+    except Exception:                            # noqa: BLE001 - never fail the pipeline
+        return None
+
+    parsed = getattr(response, "parsed_output", None)
+    if parsed is None:
+        return None
+    return ModelExplanation(parsed.title.strip(), parsed.explanation.strip(),
+                            parsed.fix.strip())
+
+
+def explain_unmatched(diagnostics: Iterable[Diagnostic], source: Path | None = None,
+                      cache_dir: Path | None = None,
+                      allow_network: bool | None = None) -> Outcome:
+    """Fill in explanations for diagnostics no rule matched. Modifies in place."""
+    cache_dir = cache_dir or CACHE_DIR
+    pending = [d for d in diagnostics if not d.explanation]
+    outcome = Outcome(attempted=len(pending))
+    if not pending:
+        return outcome
+
+    lines: list[str] = []
+    if source is not None:
+        try:
+            lines = source.read_text(errors="replace").splitlines()
+        except OSError:
+            lines = []
+
+    # Serve from cache first, so an offline run still improves on nothing.
+    still_pending: list[Diagnostic] = []
+    for diag in pending:
+        cached = _read_cache(_cache_key(diag), cache_dir)
+        if cached is None:
+            still_pending.append(diag)
+            continue
+        _apply(diag, cached, source="llm-cache")
+        outcome.explained += 1
+        outcome.from_cache += 1
+
+    if not still_pending:
+        return outcome
+
+    if allow_network is None:
+        allow_network = os.environ.get("NLPCC_OFFLINE", "") == ""
+    if not allow_network:
+        outcome.unavailable_reason = "offline mode (NLPCC_OFFLINE is set)"
+        return outcome
+
+    client, reason = _client()
+    if client is None:
+        outcome.unavailable_reason = reason
+        return outcome
+
+    for diag in still_pending:
+        line = ""
+        if diag.position and 0 < diag.position.line <= len(lines):
+            line = lines[diag.position.line - 1]
+        answer = _ask(client, diag, line)
+        if answer is None:
+            continue
+        _apply(diag, answer, source="llm")
+        _write_cache(_cache_key(diag), answer, cache_dir)
+        outcome.explained += 1
+
+    if outcome.explained == outcome.from_cache:
+        outcome.unavailable_reason = "the model returned no usable explanation"
+    return outcome
+
+
+def _apply(diag: Diagnostic, answer: ModelExplanation, source: str) -> None:
+    diag.explanation = answer.explanation
+    diag.fix = answer.fix
+    diag.meta["title"] = answer.title
+    diag.meta["explained_by"] = source
+    diag.meta["generated"] = True        # the report marks these as model-written

@@ -1,5 +1,9 @@
-# Core pipeline has no third-party dependencies yet -- it shells out to clang.
-# Pinned as each layer lands:
-#   tree_sitter / tree_sitter_c   -> parsing fallback for code outside our subset
-#   anthropic                     -> LLM enhancement layer (step 5, optional)
+# The analysis pipeline itself has no third-party dependencies -- it shells out
+# to the system C compiler and parses what it prints.
 pytest>=8.0
+
+# Steps 5b and 9 only: the model explanation layer and code generation. The
+# pipeline degrades cleanly without this installed -- findings simply arrive
+# without a generated explanation. anthropic brings pydantic, which the
+# structured-output calls use.
+anthropic>=1.15

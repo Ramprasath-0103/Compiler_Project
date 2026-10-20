@@ -2,5 +2,5 @@
   "title": "Single-letter names throughout",
   "run": true,
   "expect": [],
-  "pending": "step 6: naming conformance is a readability metric, not a compiler diagnostic"
+  "pending": "the corpus runner does not enable the quality pass; step 6 covers this case in tests/test_quality.py (R_OPAQUE_NAMES)"
 }
