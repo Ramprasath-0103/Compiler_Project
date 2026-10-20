@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SAMPLE } from "./sample.js";
 
 const SEVERITY_ORDER = { fatal: 0, error: 1, warning: 2, note: 3 };
@@ -60,9 +60,10 @@ export default function App() {
       }
       setIntent(data.intent);
       if (data.generated) {
+        // Deliberately not copied into the editor: showing the same program
+        // twice, side by side, reads as two different results.
         setGenerated(data.generated);
         setReport(null);
-        if (data.generated.accepted) setCode(data.generated.code);
       } else if (data.report) {
         setReport(data.report);
       } else if (data.error) {
@@ -109,7 +110,7 @@ export default function App() {
 
   return (
     <div className="page">
-      <header>
+      <header className="masthead">
         <h1>NLP-Driven Compiler Assistant</h1>
         <p>Paste C code. Get the problems explained, scored and improved.</p>
       </header>
@@ -158,24 +159,14 @@ export default function App() {
           />
 
           <h2>Options</h2>
-          <fieldset>
-            <legend>Optimize for</legend>
-            <div className="chips">
-              {(options?.objectives ?? []).map((name) => (
-                <label
-                  key={name}
-                  className={objectives.includes(name) ? "chip on" : "chip"}
-                >
-                  <input
-                    type="checkbox"
-                    checked={objectives.includes(name)}
-                    onChange={() => toggleObjective(name)}
-                  />
-                  {name}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <MultiSelect
+            label="Optimize for"
+            available={options?.objectives ?? []}
+            selected={objectives}
+            onToggle={toggleObjective}
+            onAll={() => setObjectives(options?.objectives ?? [])}
+            onNone={() => setObjectives([])}
+          />
 
           <label className="toggle">
             <input type="checkbox" checked={run} onChange={(e) => setRun(e.target.checked)} />
@@ -210,11 +201,81 @@ export default function App() {
 
         <section className="panel results">
           {intent && <IntentBadge intent={intent} />}
-          {generated && <Generated generated={generated} />}
+          {generated && (
+            <Generated
+              generated={generated}
+              onUse={(c) => {
+                setCode(c);
+                setGenerated(null);
+              }}
+            />
+          )}
           {!report && !generated && !error && !intent && <Empty />}
           {report && <Results report={report} />}
         </section>
       </div>
+    </div>
+  );
+}
+
+function MultiSelect({ label, available, selected, onToggle, onAll, onNone }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onClickAway(event) {
+      if (box.current && !box.current.contains(event.target)) setOpen(false);
+    }
+    function onEscape(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickAway);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("mousedown", onClickAway);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [open]);
+
+  const summary =
+    selected.length === 0
+      ? "nothing selected"
+      : selected.length === available.length
+      ? "everything"
+      : selected.join(", ");
+
+  return (
+    <div className="field" ref={box}>
+      <span className="field-label">{label}</span>
+      <button
+        type="button"
+        className="select"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className={selected.length ? "" : "placeholder"}>{summary}</span>
+        <span className="caret">{open ? "\u25B2" : "\u25BC"}</span>
+      </button>
+
+      {open && (
+        <div className="menu">
+          {available.map((name) => (
+            <label key={name} className="menu-row">
+              <input
+                type="checkbox"
+                checked={selected.includes(name)}
+                onChange={() => onToggle(name)}
+              />
+              <span>{name}</span>
+            </label>
+          ))}
+          <div className="menu-foot">
+            <button type="button" onClick={onAll}>Select all</button>
+            <button type="button" onClick={onNone}>Clear</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -235,14 +296,14 @@ function IntentBadge({ intent }) {
       </div>
       {weak && (
         <div className="muted">
-          Not sure what you meant, so everything was analyzed instead.
+          That was a guess — rephrase if it is not what you wanted.
         </div>
       )}
     </div>
   );
 }
 
-function Generated({ generated }) {
+function Generated({ generated, onUse }) {
   return (
     <div className="block">
       <h3>
@@ -252,13 +313,19 @@ function Generated({ generated }) {
         <p className="muted">
           It compiles cleanly after {generated.attempts} attempt
           {generated.attempts === 1 ? "" : "s"}
-          {generated.provider ? ` · ${generated.provider}` : ""}. It has been put
-          in the editor — press Analyze to check its quality.
+          {generated.provider ? ` · ${generated.provider}` : ""}.
         </p>
       ) : (
         <p className="note">{generated.failure_reason}</p>
       )}
-      {generated.code && <pre>{generated.code}</pre>}
+      {generated.code && (
+        <>
+          <pre className="generated-code">{generated.code}</pre>
+          <button className="secondary" onClick={() => onUse(generated.code)}>
+            Put it in the editor
+          </button>
+        </>
+      )}
       {generated.notes && <p className="muted">{generated.notes}</p>}
     </div>
   );

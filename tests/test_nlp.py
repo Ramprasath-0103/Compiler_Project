@@ -22,6 +22,13 @@ from nlpcc.nlp.intent import (ANALYZE, EXPLAIN, GENERATE, OPTIMIZE, RUN, SCORE,
     ("write me a program that sorts an array", GENERATE),
     ("let ai build my code for a calculator", GENERATE),
     ("generate a program that reads a file", GENERATE),
+    # "give me code" is as plain a request as "write a program", and used to
+    # route correctly at 17% confidence -- only the one-point word "code"
+    # matched, so the page told the user it was guessing.
+    ("give me correct code", GENERATE),
+    ("give code to sum two numbers", GENERATE),
+    ("i need code that sorts an array", GENERATE),
+    ("show me code for bubble sort", GENERATE),
     ("how good is my code", SCORE),
     ("rate my code", SCORE),
     ("make it faster", OPTIMIZE),
@@ -65,6 +72,21 @@ def test_nonsense_is_admitted_rather_than_guessed() -> None:
     assert not intent.certain
     assert intent.action == ANALYZE          # a safe default, not a claim
     assert intent.because
+
+
+def test_plain_requests_for_code_are_confident() -> None:
+    """A confident route must not be presented to the user as a guess."""
+    for text in ("give me correct code",
+                 "give code to sum two numbers",
+                 "i need code that sorts an array"):
+        intent = detect(text)
+        assert intent.action == GENERATE, text
+        assert intent.certain, f"{text} -> only {intent.confidence:.0%}"
+
+
+def test_the_task_survives_a_give_me_wrapper() -> None:
+    assert "sum two numbers" in detect("give code to sum two numbers").description
+    assert "bubble sort" in detect("show me code for bubble sort").description
 
 
 def test_it_can_say_why() -> None:

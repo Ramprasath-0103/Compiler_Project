@@ -46,6 +46,12 @@ PHRASES: dict[str, tuple[tuple[str, int], ...]] = {
         ("generate code", 6), ("generate a program", 6), ("create a program", 6),
         ("make a program", 5), ("write a function", 5), ("implement a", 4),
         ("let ai build", 6), ("for me", 1),
+        # "give me code to sum two numbers" is as plain a request to generate
+        # as "write a program", and matched only the one-point word "code".
+        ("give me code", 6), ("give code", 6), ("give me the code", 6),
+        ("give me correct code", 6), ("correct code", 4), ("working code", 4),
+        ("i need code", 6), ("need code", 5), ("show me code", 5),
+        ("code for", 4), ("code that", 4), ("code to", 4),
     ),
     EXPLAIN: (
         ("what does this mean", 6), ("what is wrong", 6), ("what's wrong", 6),
@@ -151,9 +157,10 @@ class Intent:
 # Lead-ins to strip when recovering what the user wants built.
 _LEAD_IN = re.compile(
     r"^(please\s+)?(can you\s+|could you\s+|i want you to\s+|i want\s+|"
-    r"let ai\s+|let the ai\s+|help me\s+)?"
-    r"(write|build|create|generate|make|implement|code)\s+"
-    r"(me\s+)?(a|an|the|my)?\s*(program|function|code|script)?\s*"
+    r"i need\s+|let ai\s+|let the ai\s+|help me\s+)?"
+    r"(write|build|create|generate|make|implement|give|show|need|code)\s+"
+    r"(me\s+)?(a|an|the|my)?\s*(correct|working|simple)?\s*"
+    r"(program|function|code|script)?\s*"
     r"(that|which|to|for|doing)?\s*",
     re.I)
 
