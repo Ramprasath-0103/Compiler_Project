@@ -1,9 +1,12 @@
-# The analysis pipeline itself has no third-party dependencies -- it shells out
-# to the system C compiler and parses what it prints.
-pytest>=8.0
+# The analysis pipeline has no third-party dependencies. It runs the system C
+# compiler with subprocess and parses what it prints; the lexer, parser and
+# semantic analyzer are our own. Everything else is the standard library.
 
-# Steps 5b and 9 only: the model explanation layer and code generation. The
-# pipeline degrades cleanly without this installed -- findings simply arrive
-# without a generated explanation. anthropic brings pydantic, which the
-# structured-output calls use.
+pytest>=8.0        # tests only
+
+# The three model-backed parts: explaining unmatched diagnostics
+# (nlpcc/explain/llm.py), AI code analysis (nlpcc/quality/ai.py), and code
+# generation (nlpcc/generate.py). All three are optional -- without them the
+# pipeline still compiles, detects, explains, scores and reports.
 anthropic>=1.15
+pydantic>=2.0      # the structured-output schemas on those calls
