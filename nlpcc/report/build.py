@@ -32,6 +32,7 @@ class Report:
     ran: bool = False
     sanitized: bool = True       # false when the sanitizer could not be linked
     program_output: str = ""
+    measurements: dict | None = None
 
     # -- views the renderers use ------------------------------------------
     @property
@@ -90,6 +91,7 @@ class Report:
             "diagnostics": [d.to_dict() for d in self.diagnostics],
             "recommendations": [r.to_dict() for r in self.recommendations],
             "program_output": self.program_output,
+            "measurements": self.measurements,
         }
 
     def _metrics_dict(self) -> dict[str, Any] | None:
@@ -134,4 +136,5 @@ def build(analysis, recommendations: list[Recommendation] | None = None,
         ran=analysis.run is not None,
         sanitized=(analysis.run.sanitized if analysis.run is not None else True),
         program_output=program_output,
+        measurements=(analysis.run.measurements() if analysis.run is not None else None),
     )

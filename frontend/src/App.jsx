@@ -15,6 +15,11 @@ export default function App() {
   const [request, setRequest] = useState("");
   const [intent, setIntent] = useState(null);
   const [generated, setGenerated] = useState(null);
+  const [pipeline, setPipeline] = useState(null);
+  const [improvement, setImprovement] = useState(null);
+  const [tab, setTab] = useState("report");
+  const [busyWith, setBusyWith] = useState("");
+  const editor = useRef(null);
 
   // The controls are built from what the server says it supports, so the UI
   // cannot offer an objective the analyzer does not know about.
@@ -42,6 +47,62 @@ export default function App() {
     setGenerated(null);
   }
 
+  // Clicking a finding puts the cursor on the line it is about. A textarea
+  // has no line API, so the offsets are counted from the text itself.
+  function jumpToLine(line) {
+    const area = editor.current;
+    if (!area || !line) return;
+    const lines = code.split("\n");
+    if (line > lines.length) return;
+    const start = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
+    area.focus();
+    area.setSelectionRange(start, start + lines[line - 1].length);
+    // Put the line roughly in the middle rather than at the very bottom.
+    const lineHeight = area.scrollHeight / Math.max(lines.length, 1);
+    area.scrollTop = Math.max(0, (line - 1) * lineHeight - area.clientHeight / 2);
+  }
+
+  async function post(route, body, label) {
+    setBusy(true);
+    setBusyWith(label);
+    setError("");
+    try {
+      const response = await fetch(route, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "That did not work.");
+        return null;
+      }
+      return data;
+    } catch {
+      setError("Cannot reach the analyzer. Is the server running?");
+      return null;
+    } finally {
+      setBusy(false);
+      setBusyWith("");
+    }
+  }
+
+  async function inspectPipeline() {
+    const data = await post("/api/inspect", { code }, "pipeline");
+    if (data) {
+      setPipeline(data);
+      setTab("pipeline");
+    }
+  }
+
+  async function improveCode() {
+    const data = await post("/api/improve", { code, objectives }, "improve");
+    if (data) {
+      setImprovement(data);
+      setTab("improved");
+    }
+  }
+
   // Plain English in, the right stage of the pipeline out. The intent is
   // worked out by keyword rules on the server, so this needs no model.
   async function ask() {
@@ -59,6 +120,7 @@ export default function App() {
         return;
       }
       setIntent(data.intent);
+      setTab("report");
       if (data.generated) {
         // Deliberately not copied into the editor: showing the same program
         // twice, side by side, reads as two different results.
@@ -78,8 +140,10 @@ export default function App() {
 
   async function analyze() {
     setBusy(true);
+    setBusyWith("analyze");
     reset();
     setGenerated(null);
+    setTab("report");
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -98,6 +162,7 @@ export default function App() {
       setReport(null);
     } finally {
       setBusy(false);
+      setBusyWith("");
     }
   }
 
@@ -153,10 +218,14 @@ export default function App() {
 
           <h2>Your code</h2>
           <textarea
+            ref={editor}
             value={code}
             spellCheck="false"
             onChange={(e) => setCode(e.target.value)}
           />
+          <p className="hint">
+            {code.split("\n").length} lines · click any finding to jump to its line
+          </p>
 
           <h2>Options</h2>
           <MultiSelect
@@ -188,30 +257,86 @@ export default function App() {
           </label>
 
           <button onClick={analyze} disabled={busy || !code.trim()}>
-            {busy ? "Analyzing..." : "Analyze"}
+            {busy && busyWith === "analyze" ? "Analyzing..." : "Analyze"}
           </button>
+
+          <div className="button-row">
+            <button
+              className="ghost"
+              onClick={improveCode}
+              disabled={busy || !code.trim()}
+            >
+              {busy && busyWith === "improve" ? "Improving..." : "Improve it"}
+            </button>
+            <button
+              className="ghost"
+              onClick={inspectPipeline}
+              disabled={busy || !code.trim()}
+            >
+              {busy && busyWith === "pipeline" ? "Reading..." : "Show the phases"}
+            </button>
+          </div>
 
           {busy && (
             <p className="muted">
-              Working. Generating code on a local model can take a minute.
+              Working{busyWith === "improve" || busyWith === "generate"
+                ? " — a model call can take up to a minute"
+                : ""}.
             </p>
           )}
           {error && <p className="error">{error}</p>}
         </section>
 
         <section className="panel results">
-          {intent && <IntentBadge intent={intent} />}
-          {generated && (
-            <Generated
-              generated={generated}
-              onUse={(c) => {
-                setCode(c);
-                setGenerated(null);
-              }}
-            />
+          <nav className="tabs">
+            {[
+              ["report", "Report", report || generated || intent],
+              ["pipeline", "Compiler phases", pipeline],
+              ["improved", "Improved version", improvement],
+            ].map(([key, title, enabled]) => (
+              <button
+                key={key}
+                className={tab === key ? "tab on" : "tab"}
+                disabled={!enabled}
+                onClick={() => setTab(key)}
+              >
+                {title}
+              </button>
+            ))}
+          </nav>
+
+          {tab === "report" && (
+            <>
+              {intent && <IntentBadge intent={intent} />}
+              {generated && (
+                <Generated
+                  generated={generated}
+                  onUse={(c) => {
+                    setCode(c);
+                    setGenerated(null);
+                  }}
+                />
+              )}
+              {!report && !generated && !error && !intent && <Empty />}
+              {report && <Results report={report} onJump={jumpToLine} />}
+            </>
           )}
-          {!report && !generated && !error && !intent && <Empty />}
-          {report && <Results report={report} />}
+
+          {tab === "pipeline" &&
+            (pipeline ? <Pipeline data={pipeline} onJump={jumpToLine} /> : <Empty />)}
+
+          {tab === "improved" &&
+            (improvement ? (
+              <Improved
+                improvement={improvement}
+                onUse={(c) => {
+                  setCode(c);
+                  setTab("report");
+                }}
+              />
+            ) : (
+              <Empty />
+            ))}
         </section>
       </div>
     </div>
@@ -331,6 +456,243 @@ function Generated({ generated, onUse }) {
   );
 }
 
+function Measurements({ m }) {
+  const rows = [
+    ["Build", `${m.build_ms} ms`],
+    ["Wall time", `${m.wall_ms} ms`],
+    ["CPU time", `${m.cpu_ms} ms`],
+    ["Peak memory", `${(m.peak_memory_kb / 1024).toFixed(1)} MB`],
+    ["Output", `${m.output_bytes} bytes`],
+    ["Exit status", m.timed_out ? "timed out" : String(m.exit_code)],
+  ];
+  return (
+    <div className="block">
+      <h3>Measurements</h3>
+      <div className="metrics">
+        {rows.map(([label, value]) => (
+          <div key={label} className="metric">
+            <span className="metric-value">{value}</span>
+            <span className="metric-label">{label}</span>
+          </div>
+        ))}
+      </div>
+      {m.sanitized && (
+        <p className="muted">
+          Measured with runtime checks on (-fsanitize=undefined), which
+          instruments every operation — an uninstrumented build is faster.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Pipeline({ data, onJump }) {
+  return (
+    <>
+      <p className="muted">
+        What our own front end did to <code>{data.source}</code>, phase by
+        phase. These are the real tokens, the real parse tree and the real
+        symbol table the analysis ran on.
+      </p>
+
+      <div className="phaseflow">
+        {data.phases.map((phase, i) => (
+          <div key={phase.name} className="phasestep">
+            <div className={phase.ok ? "phasechip ok" : "phasechip bad"}>
+              {phase.title}
+            </div>
+            {i < data.phases.length - 1 && <span className="arrow">→</span>}
+          </div>
+        ))}
+      </div>
+
+      {data.phases.map((phase) => (
+        <div key={phase.name} className="block">
+          <h3>
+            {phase.title}
+            <span className="grade">{phase.summary}</span>
+          </h3>
+
+          {phase.diagnostics.length > 0 && (
+            <div className="phasediags">
+              {phase.diagnostics.map((d, i) => (
+                <button
+                  key={i}
+                  className="phasediag"
+                  onClick={() => d.line && onJump && onJump(d.line)}
+                >
+                  <span className={`tag ${d.severity}`}>{d.severity}</span>
+                  {d.line ? `line ${d.line}: ` : ""}
+                  {d.title}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {phase.name === "lexical" && <Tokens detail={phase.detail} onJump={onJump} />}
+          {phase.name === "syntax" && <Tree node={phase.detail.tree} onJump={onJump} />}
+          {phase.name === "semantic" && <Symbols rows={phase.detail.symbols} onJump={onJump} />}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function Tokens({ detail, onJump }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? detail.tokens : detail.tokens.slice(0, 60);
+  return (
+    <>
+      <div className="chips">
+        {detail.counts.map((c) => (
+          <span key={c.kind} className="chip static">
+            {c.kind.toLowerCase()} <b>{c.count}</b>
+          </span>
+        ))}
+      </div>
+      <div className="tokens">
+        {shown.map((t, i) => (
+          <button
+            key={i}
+            className={`token k-${t.kind.toLowerCase()}`}
+            title={`${t.kind.toLowerCase()} · line ${t.line}`}
+            onClick={() => onJump && onJump(t.line)}
+          >
+            {t.text}
+          </button>
+        ))}
+      </div>
+      {detail.tokens.length > 60 && (
+        <button className="ghost" onClick={() => setAll((v) => !v)}>
+          {all ? "Show fewer" : `Show all ${detail.total} tokens`}
+        </button>
+      )}
+    </>
+  );
+}
+
+function Tree({ node, onJump, depth = 0 }) {
+  const [open, setOpen] = useState(depth < 3);
+  if (!node || !node.kind) return <p className="muted">No tree was built.</p>;
+  const children = node.children || [];
+
+  return (
+    <div className="treenode" style={{ marginLeft: depth ? 16 : 0 }}>
+      <div className="treerow">
+        {children.length > 0 ? (
+          <button className="twisty" onClick={() => setOpen((v) => !v)}>
+            {open ? "▾" : "▸"}
+          </button>
+        ) : (
+          <span className="twisty leaf">·</span>
+        )}
+        <button
+          className="treelabel"
+          onClick={() => node.line && onJump && onJump(node.line)}
+        >
+          <span className="treekind">{node.kind}</span>
+          {node.label && <span className="treename">{node.label}</span>}
+          {node.line > 0 && <span className="treeline">line {node.line}</span>}
+        </button>
+      </div>
+      {open &&
+        children.map((child, i) => (
+          <Tree key={i} node={child} onJump={onJump} depth={depth + 1} />
+        ))}
+      {node.truncated && <div className="muted">… trimmed</div>}
+    </div>
+  );
+}
+
+function Symbols({ rows, onJump }) {
+  if (!rows || rows.length === 0) return <p className="muted">No declarations.</p>;
+  return (
+    <table className="symbols">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Kind</th>
+          <th>Type</th>
+          <th>Line</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((s, i) => (
+          <tr key={i} onClick={() => s.line && onJump && onJump(s.line)}>
+            <td><code>{s.name}</code></td>
+            <td>{s.kind}{s.parameters != null ? ` (${s.parameters} params)` : ""}</td>
+            <td><code>{s.type || "—"}</code></td>
+            <td>{s.line || "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Improved({ improvement, onUse }) {
+  const before = improvement.before || {};
+  const after = improvement.after || {};
+  return (
+    <>
+      <div className={improvement.accepted ? "summary ok" : "summary bad"}>
+        <strong>{improvement.accepted ? "Improved" : "Not accepted"}</strong>
+        <span>{improvement.reason}</span>
+      </div>
+
+      {before.overall != null && after.overall != null && (
+        <div className="block">
+          <h3>
+            Score {before.overall} <span className="arrow">→</span>{" "}
+            <span className="big">{after.overall}</span>
+            <span className="grade">{after.grade}</span>
+          </h3>
+          <div className="metrics">
+            {Object.keys(after.dimensions || {}).map((name) => {
+              const was = before.dimensions?.[name] ?? 0;
+              const now = after.dimensions[name];
+              const delta = now - was;
+              return (
+                <div key={name} className="metric">
+                  <span className="metric-value">
+                    {now}
+                    {delta !== 0 && (
+                      <small className={delta > 0 ? "up" : "down"}>
+                        {delta > 0 ? ` +${delta}` : ` ${delta}`}
+                      </small>
+                    )}
+                  </span>
+                  <span className="metric-label">{name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {improvement.diff_lines?.length > 0 && (
+        <div className="block">
+          <h3>What changed</h3>
+          <pre className="diff">
+            {improvement.diff_lines.map((row, i) => (
+              <span key={i} className={`d-${row.kind}`}>
+                {row.text}
+                {"\n"}
+              </span>
+            ))}
+          </pre>
+        </div>
+      )}
+
+      {improvement.accepted && improvement.improved && (
+        <button className="secondary" onClick={() => onUse(improvement.improved)}>
+          Put it in the editor
+        </button>
+      )}
+    </>
+  );
+}
+
 function Empty() {
   return (
     <div className="empty">
@@ -344,7 +706,7 @@ function Empty() {
   );
 }
 
-function Results({ report }) {
+function Results({ report, onJump }) {
   const findings = [...report.diagnostics].sort(
     (a, b) =>
       (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) ||
@@ -362,11 +724,12 @@ function Results({ report }) {
           measured. Fix the errors below and analyze again.
         </p>
       )}
-      <Findings findings={findings} />
+      <Findings findings={findings} onJump={onJump} />
       <Recommendations
         recommendations={report.recommendations}
         objectives={report.objectives}
       />
+      {report.measurements && <Measurements m={report.measurements} />}
       {report.program_output && (
         <div className="block">
           <h3>Program output</h3>
@@ -443,13 +806,18 @@ function Score({ score }) {
   );
 }
 
-function Findings({ findings }) {
+function Findings({ findings, onJump }) {
   return (
     <div className="block">
       <h3>Problems ({findings.length})</h3>
       {findings.length === 0 && <p className="muted">None. The program is clean.</p>}
       {findings.map((d, i) => (
-        <article key={i} className={`finding ${d.severity}`}>
+        <article
+          key={i}
+          className={`finding ${d.severity}${d.position ? " clickable" : ""}`}
+          onClick={() => d.position && onJump && onJump(d.position.line)}
+          title={d.position ? "Go to this line" : undefined}
+        >
           <header>
             <span className={`tag ${d.severity}`}>{d.severity}</span>
             <strong>{d.meta?.title || d.message}</strong>

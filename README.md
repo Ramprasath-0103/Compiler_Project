@@ -129,7 +129,21 @@ cd frontend && npm run dev                   # terminal 2 -- UI on :5173
 ```
 
 Paste C code, pick what to optimize for, and press Analyze — or type what you
-want in plain English and press Ask. The options are fetched from `/api/options`, so the UI can
+want in plain English and press Ask.
+
+Three views, as tabs:
+
+- **Report** — the findings with their explanations, the score with its
+  per-dimension breakdown, the suggestions, and what the run cost (build
+  time, wall time, CPU time, peak memory). Click any finding to jump to its
+  line in the editor.
+- **Compiler phases** — the tokens the lexer produced, the parse tree the
+  parser built and the symbol table the analyzer filled, taken from the same
+  objects the analysis runs on. Click a token, a node or a symbol to jump to
+  its line.
+- **Improved version** — a rewrite that addresses the findings, shown as a
+  diff, accepted only if it still compiles and scores no worse. "Optimized"
+  is a measurement here, not a claim. The options are fetched from `/api/options`, so the UI can
 only ever offer objectives the analyzer actually supports.
 
 The server binds to localhost and nothing else: "Run the program" compiles and

@@ -14,9 +14,13 @@ unprivileged user -- see docs/scope.md.
 
 from __future__ import annotations
 
+import os
 import re
+import resource
 import signal
 import subprocess
+import sys
+import time
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,12 +95,97 @@ class RunResult:
     sanitized: bool = True       # false when the sanitizer could not be linked
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
+    # What it cost to run. Measured, not estimated -- and worth reading with
+    # the sanitizer in mind: -fsanitize=undefined instruments every operation,
+    # so these numbers describe the checked build, not an optimised one.
+    wall_ms: float = 0.0         # wall-clock time of the run
+    cpu_ms: float = 0.0          # user + system CPU actually used
+    peak_memory_kb: int = 0      # peak resident set of the child process
+    build_ms: float = 0.0        # time the compiler took
+    output_bytes: int = 0
+
+    def measurements(self) -> dict:
+        return {
+            "wall_ms": round(self.wall_ms, 1),
+            "cpu_ms": round(self.cpu_ms, 1),
+            "build_ms": round(self.build_ms, 1),
+            "peak_memory_kb": self.peak_memory_kb,
+            "output_bytes": self.output_bytes,
+            "sanitized": self.sanitized,
+            "exit_code": self.exit_code,
+            "timed_out": self.timed_out,
+        }
+
 
 # Generous on purpose. At 5s a crashing program on a loaded machine
 # intermittently reported R_TIMEOUT instead of the segfault that actually
 # happened -- the timeout masked the real finding. A hung program still gets
 # caught; it just takes a few seconds longer to say so.
 DEFAULT_TIMEOUT = 15.0
+
+
+@dataclass
+class _Completed:
+    """What subprocess.run would have returned."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_measured(binary: Path, stdin: str, timeout: float, cwd: str):
+    """Run the program and measure *it*, not the compiler that built it.
+
+    resource.getrusage(RUSAGE_CHILDREN) is a high-water mark across every
+    child this process has reaped, so after clang has run it reports clang's
+    footprint -- 36 MB for a program that uses a few hundred kilobytes.
+    os.wait4 returns the usage of one specific child, which is the number we
+    actually want.
+
+    Output goes to files rather than pipes so that reading it cannot deadlock
+    with waiting for the process; communicate() would reap the child and take
+    its usage with it.
+    """
+    out_path = Path(cwd) / "stdout.txt"
+    err_path = Path(cwd) / "stderr.txt"
+
+    with open(out_path, "wb") as out, open(err_path, "wb") as err:
+        process = subprocess.Popen([str(binary)], stdin=subprocess.PIPE,
+                                   stdout=out, stderr=err, cwd=cwd)
+        try:
+            if stdin:
+                process.stdin.write(stdin.encode())
+            if process.stdin:
+                process.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+        deadline = time.monotonic() + timeout
+        usage = None
+        status = None
+        while True:
+            pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+            if pid != 0:
+                break
+            if time.monotonic() > deadline:
+                process.kill()
+                os.wait4(process.pid, 0)
+                process.returncode = -9
+                raise subprocess.TimeoutExpired(str(binary), timeout)
+            time.sleep(0.005)
+
+    if os.WIFSIGNALED(status):
+        process.returncode = -os.WTERMSIG(status)
+    else:
+        process.returncode = os.WEXITSTATUS(status)
+
+    def read(path: Path) -> str:
+        try:
+            return path.read_text(errors="replace")
+        except OSError:
+            return ""
+
+    return (_Completed(process.returncode, read(out_path), read(err_path)), usage)
 
 
 def compile_and_run(source: Path, stdin: str = "", timeout: float = DEFAULT_TIMEOUT,
@@ -118,7 +207,9 @@ def compile_and_run(source: Path, stdin: str = "", timeout: float = DEFAULT_TIME
 
         sanitized = bool(sanitize)
         flags = (*SANITIZE_FLAGS, *extra_flags) if sanitized else extra_flags
+        build_started = time.perf_counter()
         build = build_with(flags)
+        build_ms = (time.perf_counter() - build_started) * 1000
 
         if build.returncode != 0 and sanitized:
             # The sanitizer is an enhancement, not a requirement. Its runtime
@@ -149,18 +240,30 @@ def compile_and_run(source: Path, stdin: str = "", timeout: float = DEFAULT_TIME
             return RunResult(compiled=False, stderr=build.stderr,
                              diagnostics=parse_output(build.stderr, source))
 
+        started = time.perf_counter()
         try:
-            run = subprocess.run([str(binary)], input=stdin, capture_output=True,
-                                 text=True, timeout=timeout, cwd=tmp)
+            run, usage = _run_measured(binary, stdin, timeout, tmp)
         except subprocess.TimeoutExpired:
-            return RunResult(compiled=True, timed_out=True, diagnostics=[
+            return RunResult(compiled=True, timed_out=True, build_ms=build_ms,
+                             wall_ms=(time.perf_counter() - started) * 1000,
+                             sanitized=sanitized, diagnostics=[
                 Diagnostic(phase=Phase.RUNTIME, severity=Severity.ERROR,
                            message=f"the program did not finish within {timeout:g}s",
                            file=str(source), code="R_TIMEOUT", origin=Origin.EXECUTOR,
                            meta={"timeout": timeout})])
+        wall_ms = (time.perf_counter() - started) * 1000
+
+    # ru_maxrss is bytes on macOS and kilobytes on Linux. Reporting the raw
+    # number would be off by 1024x on one of them.
+    divisor = 1024 if sys.platform == "darwin" else 1
+    cpu_ms = (usage.ru_utime + usage.ru_stime) * 1000 if usage else 0.0
+    peak_kb = int(usage.ru_maxrss / divisor) if usage else 0
 
     result = RunResult(compiled=True, stdout=run.stdout, stderr=run.stderr,
-                       sanitized=sanitized)
+                       sanitized=sanitized,
+                       wall_ms=wall_ms, cpu_ms=cpu_ms, build_ms=build_ms,
+                       peak_memory_kb=peak_kb,
+                       output_bytes=len(run.stdout.encode()) + len(run.stderr.encode()))
     result.diagnostics.extend(parse_sanitizer_output(run.stderr, source))
     if run.returncode < 0:
         signo = -run.returncode

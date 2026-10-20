@@ -259,3 +259,22 @@ def test_a_sanitizer_that_cannot_link_does_not_fail_the_build(monkeypatch) -> No
     assert result.compiled is True          # it still built
     assert result.sanitized is False        # and admits the checks were off
     assert result.stdout.strip() == "7"
+
+
+def test_runtime_measurements_describe_the_program_not_the_compiler() -> None:
+    """RUSAGE_CHILDREN reports the heaviest child, which after a build is clang.
+
+    It reported 36 MB for a program using a few hundred kilobytes, because
+    the compiler had run in the same process tree. os.wait4 measures the one
+    process we care about.
+    """
+    from nlpcc.backends import executor
+
+    result = executor.compile_and_run(CORPUS / "clean.c")
+    m = result.measurements()
+
+    assert result.stdout.strip() == "7"
+    assert 0 < m["peak_memory_kb"] < 20_000      # a tiny program, not a compiler
+    assert m["wall_ms"] > 0
+    assert m["build_ms"] > 0
+    assert m["exit_code"] == 0

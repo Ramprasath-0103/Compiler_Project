@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import models, pipeline
+from . import improve as improve_module
+from . import inspection, models, pipeline
 from .nlp import detect
 from .nlp import route as nlp_route
 from .optimize import OBJECTIVES, recommend
@@ -135,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:                   # noqa: N802
         route = self.path.rstrip("/")
-        if route not in ("/api/analyze", "/api/ask"):
+        if route not in ("/api/analyze", "/api/ask", "/api/inspect", "/api/improve"):
             self._send(404, {"error": f"no such endpoint: {self.path}"})
             return
 
@@ -150,6 +151,26 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._send(400, {"error": "the request body must be a JSON object"})
+            return
+
+        if route in ("/api/inspect", "/api/improve"):
+            code = payload.get("code")
+            if not isinstance(code, str) or not code.strip():
+                self._send(400, {"error": "no code submitted"})
+                return
+            try:
+                if route == "/api/inspect":
+                    with tempfile.TemporaryDirectory(prefix="nlpcc-insp-") as tmp:
+                        source = Path(tmp) / "submitted.c"
+                        source.write_text(code)
+                        self._send(200, inspection.inspect_source(source))
+                else:
+                    raw = payload.get("objectives") or list(OBJECTIVES)
+                    wanted = tuple(o for o in raw if o in OBJECTIVES) or OBJECTIVES
+                    self._send(200,
+                               improve_module.improve(code, wanted).to_dict())
+            except Exception as exc:             # noqa: BLE001
+                self._send(500, {"error": f"{exc.__class__.__name__}: {exc}"})
             return
 
         if route == "/api/ask":
@@ -179,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port: int = DEFAULT_PORT) -> None:
     httpd = ThreadingHTTPServer((HOST, port), Handler)
     print(f"\n  nlpcc API on http://{HOST}:{port}")
-    print("  endpoints: GET /api/options, POST /api/analyze, POST /api/ask")
+    print("  endpoints: GET /api/options, POST /api/analyze /ask /inspect /improve")
     print(f"  model: {models.describe()}")
     print("  bound to localhost only -- it compiles and runs submitted code\n")
     try:

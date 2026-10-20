@@ -351,3 +351,206 @@ button.example:hover { color: var(--accent); border-color: var(--accent); }
   border: 1px solid var(--line);
 }
 .menu-foot button:hover { color: var(--accent); border-color: var(--accent); }
+
+/* -- button hierarchy --------------------------------------------------- */
+.button-row { display: flex; gap: 10px; margin-top: 10px; }
+.button-row button { margin-top: 0; }
+
+button.ghost {
+  width: auto;
+  flex: 1;
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 500;
+}
+button.ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+
+/* -- tabs ---------------------------------------------------------------- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: -4px 0 18px;
+  overflow-x: auto;
+}
+button.tab {
+  width: auto;
+  margin: 0;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+button.tab:hover:not(:disabled) { color: var(--text); }
+button.tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+button.tab:disabled { opacity: 0.35; }
+
+/* -- measurements -------------------------------------------------------- */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+.metric {
+  background: #0d0f15;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+.metric-value {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.metric-value small { font-size: 13px; font-weight: 500; }
+.metric-value .up { color: var(--ok); }
+.metric-value .down { color: var(--error); }
+.metric-label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 3px;
+  text-transform: capitalize;
+}
+
+/* -- compiler phases ----------------------------------------------------- */
+.phaseflow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 22px;
+}
+.phasestep { display: flex; align-items: center; gap: 8px; }
+.phasechip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 14px;
+}
+.phasechip.ok { border-color: var(--ok); color: var(--ok); }
+.phasechip.bad { border-color: var(--error); color: var(--error); }
+.arrow { color: var(--muted); }
+
+.phasediags { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+button.phasediag {
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+}
+button.phasediag:hover { border-color: var(--accent); }
+
+.chip.static { cursor: default; color: var(--muted); }
+.chip.static b { color: var(--text); font-weight: 600; }
+
+.tokens { display: flex; flex-wrap: wrap; gap: 5px; margin: 12px 0; }
+button.token {
+  width: auto;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: #0d0f15;
+  font: 13px var(--mono);
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+button.token:hover { border-color: var(--accent); }
+.k-keyword { color: #c792ea; }
+.k-identifier { color: #82aaff; }
+.k-operator, .k-punctuator { color: var(--muted); }
+.k-int_literal, .k-float_literal, .k-char_literal { color: #f78c6c; }
+.k-string_literal { color: #c3e88d; }
+.k-preprocessor { color: #ffcb6b; }
+.k-comment { color: #5f6b80; }
+
+.treenode { font: 13.5px var(--mono); }
+.treerow { display: flex; align-items: center; gap: 4px; }
+button.twisty {
+  width: 20px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.twisty.leaf { width: 20px; text-align: center; color: #3a4150; }
+button.treelabel {
+  width: auto;
+  margin: 0;
+  padding: 2px 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 400;
+  color: var(--text);
+  text-align: left;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+button.treelabel:hover { background: #1e2230; }
+.treekind { color: #82aaff; }
+.treename { color: #c3e88d; }
+.treeline { color: var(--muted); font-size: 12px; }
+
+table.symbols td, table.symbols th { padding: 7px 10px 7px 0; text-align: left; }
+table.symbols th { color: var(--muted); font-weight: 500; font-size: 13px; }
+table.symbols tbody tr { cursor: pointer; }
+table.symbols tbody tr:hover { background: #1e2230; }
+
+/* -- diff ---------------------------------------------------------------- */
+pre.diff { max-height: 520px; overflow: auto; }
+.d-add { color: #a5d6a7; background: rgba(81, 207, 102, 0.1); display: block; }
+.d-remove { color: #ef9a9a; background: rgba(255, 107, 107, 0.1); display: block; }
+.d-hunk { color: var(--accent); display: block; }
+.d-meta { color: var(--muted); display: block; }
+.d-same { color: var(--text); display: block; opacity: 0.75; }
+
+/* -- findings are clickable ---------------------------------------------- */
+.finding.clickable { cursor: pointer; }
+.finding.clickable:hover { border-color: var(--border-strong, #3a4150); }
+
+/* -- responsive ----------------------------------------------------------- */
+@media (max-width: 950px) {
+  .page { padding: 16px; }
+  .columns { gap: 16px; }
+  textarea { height: 260px; }
+  .button-row { flex-direction: column; }
+  .tabs { margin-bottom: 14px; }
+}
+
+@media (max-width: 560px) {
+  .panel { padding: 14px; }
+  .askrow { flex-direction: column; }
+  .askrow button { width: 100%; }
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .where { margin-left: 0; width: 100%; }
+}
