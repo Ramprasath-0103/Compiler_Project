@@ -146,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     sc = sub.add_parser("score", help="rate code quality across the five dimensions")
     sc.add_argument("source", type=Path)
     sc.add_argument("--json", action="store_true")
+    sc.add_argument("--ai", action="store_true", help="also run the AI code analysis")
     sc.add_argument("--no-color", action="store_true")
 
     op = sub.add_parser("optimize", help="suggest improvements for chosen objectives")
@@ -153,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     op.add_argument("--for", dest="objectives", metavar="LIST",
                     help=f"comma-separated: {', '.join(OBJECTIVES)} (default: all)")
     op.add_argument("--json", action="store_true")
+    op.add_argument("--ai", action="store_true", help="also run the AI code analysis")
 
     rp = sub.add_parser("report", help="write the full analysis report")
     rp.add_argument("source", type=Path)
@@ -161,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="objectives for the recommendations section")
     rp.add_argument("--json", action="store_true", help="JSON instead of Markdown")
     rp.add_argument("--run", action="store_true", help="also execute the program")
+    rp.add_argument("--ai", action="store_true", help="also run the AI code analysis")
     rp.add_argument("--explain-with-model", action="store_true")
 
     gn = sub.add_parser("generate", help="write C from a natural-language description")
@@ -204,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.command == "score":
-        result = pipeline.analyze(args.source, quality=True)
+        result = pipeline.analyze(args.source, quality=True, ai=args.ai)
         if result.score is None:
             print("nlpcc: cannot score a program that does not compile; "
                   "fix the errors first (run 'nlpcc analyze').", file=sys.stderr)
@@ -217,9 +220,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "optimize":
         objectives = _parse_objectives(args.objectives)
-        result = pipeline.analyze(args.source, quality=True)
+        result = pipeline.analyze(args.source, quality=True, ai=args.ai)
         quality_findings = [d for d in result.diagnostics if d.origin.value == "rules"]
-        recs = recommend(args.source, objectives, quality_findings=quality_findings)
+        recs = recommend(args.source, objectives, quality_findings=quality_findings,
+                         score=result.score)
         if args.json:
             print(json.dumps({"objectives": list(objectives),
                               "recommendations": [r.to_dict() for r in recs]}, indent=2))
@@ -229,11 +233,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "report":
         objectives = _parse_objectives(args.objectives)
-        result = pipeline.analyze(args.source, run=args.run, quality=True)
+        result = pipeline.analyze(args.source, run=args.run, quality=True, ai=args.ai)
         if args.explain_with_model:
             llm.explain_unmatched(result.diagnostics, source=args.source)
         quality_findings = [d for d in result.diagnostics if d.origin.value == "rules"]
-        recs = recommend(args.source, objectives, quality_findings=quality_findings)
+        recs = recommend(args.source, objectives, quality_findings=quality_findings,
+                         score=result.score)
         report = build_report(result, recs, objectives)
         text = report.to_json() if args.json else to_markdown(report)
         if args.output:

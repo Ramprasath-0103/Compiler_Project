@@ -21,6 +21,7 @@ from .backends import clang_runner, executor
 from .diagnostics import Diagnostic, Severity, sort_diagnostics
 from .explain import rules
 from .frontend import lexer, parser, semantic
+from .quality import ai as quality_ai
 from .quality import metrics as quality_metrics
 from .quality import rules as quality_rules
 from .quality import score as quality_score
@@ -83,12 +84,15 @@ def _run_own_frontend(source: Path) -> tuple[list[Diagnostic], bool]:
 
 
 def analyze(source: Path, run: bool = False, stdin: str = "",
-            quality: bool = False) -> Analysis:
+            quality: bool = False, ai: bool = False) -> Analysis:
     """Analyze one file.
 
-    ``quality`` adds the step-6 pass: it needs a parseable program, so it is
+    ``quality`` adds the analysis pass: it needs a parseable program, so it is
     skipped when the file does not compile -- there is no useful complexity
     figure for a function the parser could not finish reading.
+
+    ``ai`` adds the AI code analysis stage beside the rules. It is optional
+    and silent when the model is unavailable.
     """
     result = Analysis(source=source)
 
@@ -112,6 +116,12 @@ def analyze(source: Path, run: bool = False, stdin: str = "",
             if diag.key not in seen:
                 result.diagnostics.append(diag)
                 seen.add(diag.key)
+
+        if ai:
+            for diag in quality_ai.analyze(source):
+                if diag.key not in seen:
+                    result.diagnostics.append(diag)
+                    seen.add(diag.key)
 
     if run and not result.errors:
         result.run = executor.compile_and_run(source, stdin=stdin)

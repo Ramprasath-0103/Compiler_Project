@@ -243,9 +243,24 @@ def _loops_without_bounds_check(source: Path) -> list[Recommendation]:
     return out
 
 
+# Which score dimension each objective improves, so the score can order the
+# advice: the quality score feeds the optimization stage.
+OBJECTIVE_DIMENSION = {
+    SPEED: "performance",
+    MEMORY: "performance",
+    READABILITY: "readability",
+    MAINTAINABILITY: "maintainability",
+}
+
+
 def recommend(source: Path, objectives: tuple[str, ...] = OBJECTIVES,
-              quality_findings: list[Diagnostic] | None = None) -> list[Recommendation]:
-    """Recommendations for ``source``, keeping only those serving ``objectives``."""
+              quality_findings: list[Diagnostic] | None = None,
+              score=None) -> list[Recommendation]:
+    """Recommendations for ``source``, keeping only those serving ``objectives``.
+
+    When a ``score`` is given, advice for the weakest dimension comes first --
+    the suggestions follow from the scoring rather than sitting beside it.
+    """
     unknown = [o for o in objectives if o not in OBJECTIVES]
     if unknown:
         raise ValueError(f"unknown objective(s): {', '.join(unknown)}; "
@@ -276,5 +291,14 @@ def recommend(source: Path, objectives: tuple[str, ...] = OBJECTIVES,
 
     kept = [r for r in out if r.serves(objectives)]
     order = {"high": 0, "moderate": 1, "low": 2}
-    kept.sort(key=lambda r: (order.get(r.impact, 1), r.line or 0))
+
+    def worst_dimension(rec: Recommendation) -> int:
+        """The lowest score among the dimensions this advice improves."""
+        if score is None:
+            return 0
+        values = [score.dimensions.get(OBJECTIVE_DIMENSION[o], 100)
+                  for o in rec.objectives if o in OBJECTIVE_DIMENSION]
+        return min(values) if values else 100
+
+    kept.sort(key=lambda r: (worst_dimension(r), order.get(r.impact, 1), r.line or 0))
     return kept

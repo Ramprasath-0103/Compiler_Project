@@ -200,9 +200,3 @@ worked.
 
 React frontend, PostgreSQL, multi-language support, IDE plugin, anything
 networked. The CLI is the deliverable.
-
-## Missing input
-
-The proposed-system workflow diagram linked on slide 7 lives in Excalidraw and
-is not readable from the link alone. Export it and commit it as
-`docs/workflow.png` so the architecture above can be checked against it.

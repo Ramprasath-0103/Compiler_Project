@@ -43,6 +43,7 @@ class Origin(str, Enum):
     CLANG = "clang"         # ground truth
     EXECUTOR = "executor"   # crash, signal, timeout
     RULES = "rules"         # quality / security rule engine
+    AI = "ai"               # the AI code analysis pass
 
 
 @dataclass(frozen=True)

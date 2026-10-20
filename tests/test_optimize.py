@@ -40,3 +40,22 @@ def test_high_impact_comes_first() -> None:
     order = {"high": 0, "moderate": 1, "low": 2}
     ranks = [order[r.impact] for r in recs]
     assert ranks == sorted(ranks)
+
+
+def test_the_score_orders_the_advice() -> None:
+    """Quality scoring feeds optimization: the weakest dimension comes first."""
+    from nlpcc import pipeline
+    from nlpcc.optimize.recommend import OBJECTIVE_DIMENSION
+
+    case = CORPUS / "quality" / "deep_nesting.c"
+    analysis = pipeline.analyze(case, quality=True)
+    recs = recommend(case, OBJECTIVES, score=analysis.score)
+    assert recs
+
+    def weakest(rec):
+        values = [analysis.score.dimensions[OBJECTIVE_DIMENSION[o]]
+                  for o in rec.objectives if o in OBJECTIVE_DIMENSION]
+        return min(values) if values else 100
+
+    scores = [weakest(r) for r in recs]
+    assert scores == sorted(scores), "worst-scoring dimension should come first"

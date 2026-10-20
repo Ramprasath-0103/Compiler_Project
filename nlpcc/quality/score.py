@@ -47,6 +47,9 @@ CRITICAL_SECURITY_CAP = 60
 # worst dimension rather than averaging it away.
 WEAKEST_LINK_MARGIN = 20
 
+# What an AI finding costs, when it does not say.
+AI_FINDING_PENALTY = 10
+
 # What a compiler diagnostic costs the practices dimension.
 COMPILE_ERROR_PENALTY = 30
 COMPILE_WARNING_PENALTY = 8
@@ -111,6 +114,10 @@ def compute(diagnostics: Iterable[Diagnostic]) -> Score:
         if rule is not None:
             dimension, penalty = rule.dimension, rule.penalty
             critical = critical or rule.critical
+        elif diag.meta.get("dimension") in WEIGHTS:
+            # AI findings bring their own dimension and penalty.
+            dimension = diag.meta["dimension"]
+            penalty = int(diag.meta.get("penalty", AI_FINDING_PENALTY))
         elif diag.phase is Phase.QUALITY and diag.origin.value == "rules":
             continue                      # a quality finding with no rule: not scorable
         elif diag.severity in (Severity.ERROR, Severity.FATAL):

@@ -43,6 +43,8 @@ unavailable, which is why diagnostics are scraped from text.
 
 ## How it fits together
 
+A diagram of the whole flow is in [docs/workflow.md](docs/workflow.md).
+
 ```
 source.c
    │

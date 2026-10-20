@@ -169,3 +169,42 @@ def test_scores_stay_in_range() -> None:
         assert 0 <= analysis.score.overall <= 100, case
         for name, value in analysis.score.dimensions.items():
             assert 0 <= value <= 100, (case, name)
+
+
+# --- the AI analysis stage ----------------------------------------------------
+def test_ai_findings_are_scored_by_their_own_dimension() -> None:
+    """AI findings carry their dimension and penalty instead of a static rule."""
+    from nlpcc.diagnostics import Diagnostic, Origin, Phase, Position, Severity
+
+    finding = Diagnostic(
+        phase=Phase.QUALITY, severity=Severity.WARNING,
+        message="a problem no threshold describes", code="AI_SECURITY",
+        position=Position(4), origin=Origin.AI,
+        explanation="...", fix="...",
+        meta={"dimension": "security", "penalty": 25, "explained_by": "ai"})
+
+    result = score.compute([finding])
+    assert result.dimensions["security"] == 75
+    assert result.for_dimension("security")[0].code == "AI_SECURITY"
+
+
+def test_ai_analysis_is_silent_without_credentials() -> None:
+    """The rules must work alone; the AI stage is additive, never required."""
+    from nlpcc.quality import ai
+
+    original = ai._client
+    ai._client = lambda: (None, "no API credentials available (test)")
+    try:
+        assert ai.analyze(CORPUS / "clean.c") == []
+    finally:
+        ai._client = original
+
+
+def test_ai_stage_does_not_change_the_rule_findings() -> None:
+    from nlpcc import pipeline
+    with_ai = pipeline.analyze(CORPUS / "quality" / "deep_nesting.c",
+                               quality=True, ai=True)
+    without = pipeline.analyze(CORPUS / "quality" / "deep_nesting.c", quality=True)
+    rule_codes = lambda a: sorted(d.code for d in a.diagnostics
+                                  if d.origin.value == "rules")
+    assert rule_codes(with_ai) == rule_codes(without)
