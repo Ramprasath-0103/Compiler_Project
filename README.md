@@ -29,12 +29,25 @@ The CLI is the deliverable. See `docs/scope.md`.
 ## Running it
 
 ```bash
-python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+./run.sh
+```
+
+Installs anything missing the first time, starts both servers, and opens
+http://localhost:5173. Ctrl-C stops both.
+
+```bash
+./run.sh setup     # install dependencies only
+./run.sh test      # run the test suite
+./run.sh stop      # stop whatever is left on the ports
+```
+
+The terminal interface, if you prefer it:
+
+```bash
 ./.venv/bin/python -m nlpcc analyze tests/corpus/syntax/missing_semicolon.c
 ./.venv/bin/python -m nlpcc analyze tests/corpus/runtime/divide_by_zero.c --run
 ./.venv/bin/python -m nlpcc analyze program.c --json
 ./.venv/bin/python -m nlpcc rules
-./.venv/bin/python -m pytest tests -q
 ```
 
 Needs a C compiler on `PATH` (clang or gcc). Note that on macOS `gcc` is a
@@ -84,24 +97,27 @@ produced three compiling programs out of five; Gemini produced five.
 Gemini's free tier meters each model separately, so a quota refusal on one
 falls back to the other rather than failing.
 
-**Never commit the key.** Keep it in your shell, not in a file the repo
-tracks:
+**Never commit the key.** Put it in `.env`, which is gitignored and read
+automatically at startup:
 
 ```bash
-export GEMINI_API_KEY=...        # in your shell profile, not in git
+echo 'GEMINI_API_KEY=your-key' >> .env
 ```
+
+Anything already exported in the shell wins over `.env`.
 
 ## The web interface
 
-Two processes: the Python API, and the React dev server that proxies to it.
+`./run.sh` starts both halves: the Python API on :8000 and the React dev
+server on :5173, which proxies `/api` to it. To run them separately:
 
 ```bash
 ./.venv/bin/python -m nlpcc serve            # terminal 1 -- API on :8000
-cd frontend && npm install && npm run dev    # terminal 2 -- UI on :5173
+cd frontend && npm run dev                   # terminal 2 -- UI on :5173
 ```
 
-Open http://localhost:5173. Paste C code, pick what to optimize for, and
-press Analyze — or type what you want in plain English and press Ask. The options are fetched from `/api/options`, so the UI can
+Paste C code, pick what to optimize for, and press Analyze — or type what you
+want in plain English and press Ask. The options are fetched from `/api/options`, so the UI can
 only ever offer objectives the analyzer actually supports.
 
 The server binds to localhost and nothing else: "Run the program" compiles and
